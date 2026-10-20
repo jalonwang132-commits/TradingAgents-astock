@@ -371,6 +371,30 @@ def render_sidebar() -> None:
     # Restore saved LLM config on every render so selectboxes start at the user's last selection.
     _load_saved_llm_config()
 
+    # 用两个按钮而不是 radio：radio 的 key 一旦实例化就不能在按钮回调里写，
+    # 否则 StreamlitAPIException；而「开始分析 / 历史记录」又必须能把视图切回
+    # 工作台。按钮只写一个普通 session 变量，没有这个限制。
+    st.session_state.setdefault("current_view", "workspace")
+    nav_workspace, nav_team = st.columns(2)
+    if nav_workspace.button(
+        "📈 工作台",
+        key="nav_workspace",
+        use_container_width=True,
+        type="primary"
+        if st.session_state["current_view"] == "workspace"
+        else "secondary",
+    ):
+        st.session_state["current_view"] = "workspace"
+        st.rerun()
+    if nav_team.button(
+        "🧑‍💼 投研团队",
+        key="nav_team",
+        use_container_width=True,
+        type="primary" if st.session_state["current_view"] == "team" else "secondary",
+    ):
+        st.session_state["current_view"] = "team"
+        st.rerun()
+
     st.markdown(
         """
         <div style="text-align:center; margin-bottom:1.5rem;">
@@ -443,6 +467,7 @@ def render_sidebar() -> None:
                 "fresh": True,
             }
             st.session_state["viewing_history"] = None
+            st.session_state["current_view"] = "workspace"
 
     _render_analysis_controls(ticker, trade_date)
 
@@ -474,6 +499,7 @@ def render_sidebar() -> None:
                     "trade_date": d,
                 }
                 st.session_state["viewing_history"] = None
+                st.session_state["current_view"] = "workspace"
 
     st.markdown("---")
     st.markdown("#### 历史记录")
@@ -489,6 +515,7 @@ def render_sidebar() -> None:
         if st.button(label, key=f"hist_{t}_{d}", use_container_width=True):
             st.session_state["viewing_history"] = entry["path"]
             st.session_state["start_analysis"] = None
+            st.session_state["current_view"] = "workspace"
 
     st.markdown("---")
     st.caption("⚠️ 仅供学习研究，不构成投资建议")

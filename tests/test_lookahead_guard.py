@@ -224,14 +224,16 @@ def test_profit_forecast_curr_date_is_required():
 
 
 def test_fundamentals_prompt_tells_the_model_to_pass_the_date():
-    """工具签名要求了还不够——提示词不提，模型也不会主动传。"""
-    import inspect
+    """工具签名要求了还不够——提示词不提，模型也不会主动传。
 
-    from tradingagents.agents.analysts import fundamentals_analyst
+    提示词已集中到 prompt_defaults.py；这里改查默认模板，避免再靠 inspect
+    agent 源码（源码里只剩组装逻辑，文案不在了）。
+    """
+    from tradingagents.agents.prompt_registry import get_default_prompt
 
-    src = inspect.getsource(fundamentals_analyst.create_fundamentals_analyst)
-    assert "get_profit_forecast(ticker, curr_date)" in src
-    assert "curr_date 必须传" in src
+    prompt = get_default_prompt("fundamentals", "system")
+    assert "get_profit_forecast(ticker, curr_date)" in prompt
+    assert "curr_date 必须传" in prompt
 
 
 def test_fund_flow_history_trimmed_to_twenty_rows(monkeypatch):
@@ -303,14 +305,12 @@ def test_statement_tools_forward_curr_date():
 
 
 def test_fundamentals_prompt_asks_for_date_on_statement_tools():
-    import inspect
+    from tradingagents.agents.prompt_registry import get_default_prompt
 
-    from tradingagents.agents.analysts import fundamentals_analyst
-
-    src = inspect.getsource(fundamentals_analyst.create_fundamentals_analyst)
+    prompt = get_default_prompt("fundamentals", "system")
     for name in ("get_balance_sheet", "get_cashflow", "get_income_statement"):
-        assert f"{name}(ticker, curr_date)" in src, name
-    assert "三张财报表的 **curr_date 也必须传" in src
+        assert f"{name}(ticker, curr_date)" in prompt, name
+    assert "三张财报表的 **curr_date 也必须传" in prompt
 
 
 def test_statement_tools_refuse_an_empty_date(monkeypatch):

@@ -12,7 +12,19 @@ def _status_badge(status: str) -> str:
         return '<span style="color:#22c55e; font-size:1.3rem;">●</span>'
     if status == "active":
         return '<span style="color:#ff5a1f; font-size:1.3rem;">◉</span>'
+    if status == "off":
+        return '<span style="color:#333; font-size:1.3rem;">—</span>'
     return '<span style="color:#333; font-size:1.3rem;">○</span>'
+
+
+def _status_color(status: str) -> str:
+    if status == "active":
+        return "#f5f1eb"
+    if status == "done":
+        return "#22c55e"
+    if status == "off":
+        return "#4b5563"
+    return "#888"
 
 
 def _format_time(seconds: float) -> str:
@@ -44,8 +56,9 @@ def render_progress(tracker: ProgressTracker) -> None:
     if tracker.is_paused:
         st.caption("当前分析已暂停。")
 
-    completed = len(tracker.completed_stages)
-    total = len(PIPELINE_STAGES)
+    expected_stages = tracker.expected_stage_ids()
+    completed = len([s for s in tracker.completed_stages if s in expected_stages])
+    total = len(expected_stages)
     pct = completed / total if total else 0
     st.progress(pct, text=f"{completed}/{total} 阶段完成  ·  {_format_time(tracker.elapsed)}")
 
@@ -59,14 +72,21 @@ def render_progress(tracker: ProgressTracker) -> None:
 
     cols = st.columns(len(analyst_stages))
     for col, stage in zip(cols, analyst_stages):
-        status = tracker.stage_status(stage["id"])
+        enabled = tracker.is_stage_enabled(stage["id"])
+        status = tracker.stage_status(stage["id"]) if enabled else "off"
         badge = _status_badge(status)
-        label_color = "#f5f1eb" if status == "active" else "#888" if status == "pending" else "#22c55e"
+        label_color = _status_color(status)
+        suffix = (
+            '<br><span style="font-size:0.62rem; color:#4b5563;">未参与</span>'
+            if not enabled
+            else ""
+        )
         col.markdown(
             f"""
             <div style="text-align:center; padding:0.5rem 0;">
                 {badge}<br>
                 <span style="font-size:0.75rem; color:{label_color};">{stage['name']}</span>
+                {suffix}
             </div>
             """,
             unsafe_allow_html=True,
@@ -81,7 +101,7 @@ def render_progress(tracker: ProgressTracker) -> None:
     for col, stage in zip(cols2, post_stages):
         status = tracker.stage_status(stage["id"])
         badge = _status_badge(status)
-        label_color = "#f5f1eb" if status == "active" else "#888" if status == "pending" else "#22c55e"
+        label_color = _status_color(status)
         col.markdown(
             f"""
             <div style="text-align:center; padding:0.5rem 0;">

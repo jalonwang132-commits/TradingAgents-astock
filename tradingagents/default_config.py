@@ -58,6 +58,13 @@ DEFAULT_CONFIG = {
     #   }
     # provider 省略则沿用 llm_provider；合法角色名见 graph/setup.py 的 ROLE_KEYS。
     "role_llms": {},
+    # 参与本次分析的分析师（按此顺序进图）。Web「投研团队」页的开关写到这里；
+    # 不传则用全部 7 位，保持原有行为。
+    "selected_analysts": ["market", "social", "news", "fundamentals", "policy", "hot_money", "lockup"],
+    # 按角色覆盖提示词：{"role": {"part": "文本"}}。只覆盖用户改过的片段，
+    # 其余片段继续用 tradingagents/agents/prompt_defaults.py 的默认值。
+    # Web「投研团队」页编辑后写入这里；CLI / 脚本也可以直接传这份 dict。
+    "agent_prompts": {},
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"

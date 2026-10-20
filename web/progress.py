@@ -25,6 +25,11 @@ PIPELINE_STAGES: list[dict[str, str]] = [
 
 STAGE_IDS = [s["id"] for s in PIPELINE_STAGES]
 
+# 团队页可以关掉部分分析师；进度条和「当前阶段」要跟着少掉对应阶段，
+# 否则 12 阶段永远走不满、被关掉的分析师还会被标成「进行中」。
+ANALYST_STAGE_IDS = frozenset(STAGE_IDS[:7])
+POST_STAGE_IDS = tuple(STAGE_IDS[7:])
+
 
 @dataclass
 class ProgressTracker:
@@ -43,6 +48,12 @@ class ProgressTracker:
     current_stage: str = ""
     completed_stages: list[str] = field(default_factory=list)
     stage_reports: dict[str, str] = field(default_factory=dict)
+
+    # 「投研团队」页面用的角色级状态（含 bull/bear/risk 三方等子阶段）。
+    role_states: dict[str, str] = field(default_factory=dict)
+    selected_analysts: list[str] = field(default_factory=list)
+    max_debate_rounds: int = 1
+    max_risk_rounds: int = 1
 
     final_state: dict[str, Any] = field(default_factory=dict)
     signal: str = ""
@@ -96,6 +107,7 @@ class ProgressTracker:
             self.current_stage = ""
             self.completed_stages.clear()
             self.stage_reports.clear()
+            self.role_states.clear()
             self.final_state = {}
             self.signal = ""
             self.llm_calls = 0
@@ -118,6 +130,7 @@ class ProgressTracker:
             self.current_stage = ""
             self.completed_stages.clear()
             self.stage_reports.clear()
+            self.role_states.clear()
             self.final_state = {}
             self.signal = ""
             self.llm_calls = 0
@@ -169,6 +182,18 @@ class ProgressTracker:
             self.tokens_in = tok_in
             self.tokens_out = tok_out
 
+    def update_role_states(self, states: dict[str, str]) -> None:
+        """替换「投研团队」页面的角色级状态快照。"""
+        with self._lock:
+            if self.stop_requested:
+                return
+            self.role_states = dict(states)
+
+    def role_state_snapshot(self) -> dict[str, str]:
+        """线程安全地读一份角色状态快照。"""
+        with self._lock:
+            return dict(self.role_states)
+
     @property
     def elapsed(self) -> float:
         return time.time() - self.start_time
@@ -180,3 +205,26 @@ class ProgressTracker:
             if stage_id == self.current_stage:
                 return "active"
             return "pending"
+
+    def is_stage_enabled(self, stage_id: str) -> bool:
+        """该阶段是否属于本次运行（被关掉的分析师返回 False）。"""
+        with self._lock:
+            if stage_id not in ANALYST_STAGE_IDS:
+                return True
+            selected = self.selected_analysts or list(ANALYST_STAGE_IDS)
+            return stage_id in selected
+
+    def expected_stage_ids(self) -> list[str]:
+        """本次运行真正会执行的阶段，按图里的执行顺序（选中的分析师顺序）。"""
+        with self._lock:
+            if self.selected_analysts:
+                analyst_stages = [
+                    stage_id
+                    for stage_id in self.selected_analysts
+                    if stage_id in ANALYST_STAGE_IDS
+                ]
+            else:
+                analyst_stages = [
+                    stage_id for stage_id in STAGE_IDS if stage_id in ANALYST_STAGE_IDS
+                ]
+            return analyst_stages + list(POST_STAGE_IDS)

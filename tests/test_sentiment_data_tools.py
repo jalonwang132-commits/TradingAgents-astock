@@ -14,6 +14,7 @@ import inspect
 import re
 
 from tradingagents.agents.analysts import social_media_analyst as sma
+from tradingagents.agents.prompt_registry import get_default_prompt
 
 
 def _tool_names_in_source(func) -> set:
@@ -54,19 +55,22 @@ def test_graph_tool_node_matches_analyst_tools():
 
 
 def test_prompt_names_every_bound_tool():
-    """提示词点名的工具必须真的绑上了，否则模型照着调会调空。"""
-    src = inspect.getsource(sma.create_social_media_analyst)
+    """提示词点名的工具必须真的绑上了，否则模型照着调会调空。
+
+    提示词文案在 prompt_defaults.py（页面和 agent 共用同一份）。
+    """
+    prompt = get_default_prompt("social", "system")
     for tool in EXPECTED_TOOLS:
-        assert f"`{tool}(" in src, f"提示词里没有引导模型使用 {tool}"
+        assert f"`{tool}(" in prompt, f"提示词里没有引导模型使用 {tool}"
 
 
 def test_prompt_requires_divergence_check():
     """资金面与消息面背离是这次改造最有价值的产出，必须强制写进报告。"""
-    src = inspect.getsource(sma.create_social_media_analyst)
-    assert "背离" in src
+    prompt = get_default_prompt("social", "system")
+    assert "背离" in prompt
 
 
 def test_prompt_forbids_fabricating_missing_data():
     """取不到数就标注缺失，不许用新闻语气编一个数字出来。"""
-    src = inspect.getsource(sma.create_social_media_analyst)
-    assert "数据缺失" in src
+    prompt = get_default_prompt("social", "system")
+    assert "数据缺失" in prompt

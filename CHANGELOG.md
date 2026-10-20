@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.5.22] — 2026-10-20
+
+### 新增：Web「投研团队」页 —— 团队可视化 + 提示词在线编辑
+
+- 侧栏新增「🧑‍💼 投研团队」页：16 个角色按真实执行顺序排列（7 分析师 → 质量门控 →
+  多空辩论 → 研究经理 → 交易员 → 三方风控 → 组合经理）；运行中实时显示
+  等待 / 进行中 / 已完成 / 未参与，历史分析也能回看每个角色的状态。
+- 每个角色都可以在浏览器里查看并编辑提示词：分析师、质量门控、多空辩手、
+  研究经理、交易员（system / user 两段）、三位风控、组合经理全部覆盖。
+  「完整提示词预览」展示真正会发出去的全文，运行时变量（报告、辩论历史、标的说明）
+  以示例值展示；删除 `{变量}` 会明确警告。
+- 覆盖写入 `~/.tradingagents/team_config.json`（原子写），下一次「开始分析」生效；
+  支持单角色恢复默认、全部恢复默认、导入 / 导出 JSON。
+- 新增「团队编排」：选择本次参与的分析师（至少 1 位）、多空辩论轮数 1-5、
+  风险辩论轮数 1-5。
+- 提示词默认文案集中到 `tradingagents/agents/prompt_defaults.py`，页面、agent、
+  预览共用同一份；新增 `config["agent_prompts"]` 与 `config["selected_analysts"]`。
+  新增 agent / 改提示词结构时只需改 defaults + registry + builder。
+- 回归测试：`tests/test_prompt_registry.py`、`tests/test_prompt_override_flow.py`、
+  `tests/test_team_store.py`、`tests/test_team_state.py`。
+
 ## [0.5.21] — 2026-10-11
 
 ### 修复：资产负债表 / 利润表 / 现金流量表此前一直是空表（#116，#117 by @ontheway06）

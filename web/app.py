@@ -23,9 +23,14 @@ from tradingagents.default_config import DEFAULT_CONFIG  # noqa: E402
 from web.components.progress_panel import render_progress  # noqa: E402
 from web.components.report_viewer import render_report  # noqa: E402
 from web.components.sidebar import render_sidebar, validate_model_selection  # noqa: E402
+from web.components.team_view import render_team_view  # noqa: E402
 from web.history import clear_incomplete_task, extract_signal, load_analysis  # noqa: E402
 from web.progress import ProgressTracker  # noqa: E402
 from web.runner import run_analysis_in_thread  # noqa: E402
+from web.team_store import (  # noqa: E402
+    apply_team_config_to_run_config,
+    load_team_config,
+)
 
 # ── Page config ──────────────────────────────────────────────────────────────
 
@@ -173,8 +178,9 @@ def _build_config() -> dict:
     }
     # Analysis window (#16): start-date input in the sidebar → look-back days.
     config["market_lookback_days"] = st.session_state.get("market_lookback_days")
-    config["max_debate_rounds"] = 1
-    config["max_risk_discuss_rounds"] = 1
+    # 团队编排（参与的分析师 / 辩论轮数 / 每个角色的提示词覆盖）来自
+    # 「投研团队」页，和模型配置分开持久化。
+    apply_team_config_to_run_config(config, load_team_config())
     config["checkpoint_enabled"] = True
     config["output_language"] = "Chinese"
     # Optional: route nodes through a personal Claude Pro/Max subscription (Agent
@@ -200,6 +206,18 @@ def _build_config() -> dict:
 
 with st.sidebar:
     render_sidebar()
+
+
+# ── 投研团队页面 ─────────────────────────────────────────────────────────────
+# 放在分析状态机之前：团队页要能看到正在跑的 tracker 角色状态。侧栏刚提交
+# 「开始分析」时例外——先让状态机消费 start_analysis，否则请求会一直挂在 session
+# 里没人处理。历史记录会把 current_view 切回工作台，因此不会卡在这里。
+if (
+    st.session_state.get("current_view") == "team"
+    and not st.session_state.get("start_analysis")
+):
+    render_team_view()
+    st.stop()
 
 
 # ── Handle "Start Analysis" trigger ──────────────────────────────────────────

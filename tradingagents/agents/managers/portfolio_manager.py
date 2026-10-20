@@ -10,6 +10,7 @@ back gracefully to free-text generation.
 
 from __future__ import annotations
 
+from tradingagents.agents.prompt_builder import build_pm_prompt
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
 from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
@@ -21,15 +22,7 @@ from tradingagents.agents.utils.structured import (
 )
 
 
-# Mirrors the Trader: the schema alone cannot stop the model from putting
-# price levels into the prose fields, so the prompt says it explicitly too.
-_NO_LEVELS_RULE = (
-    "\n- Do NOT state entry prices, stop-loss levels, target prices or "
-    "position sizes for this security; give the rating and the reasoning."
-)
-
-
-def create_portfolio_manager(llm):
+def create_portfolio_manager(llm, prompt_override=None):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
     def portfolio_manager_node(state) -> dict:
@@ -47,49 +40,17 @@ def create_portfolio_manager(llm):
             else ""
         )
 
-        prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
-
-{instrument_context}
-
----
-
-**A-Stock Trading Constraints** (must factor into your decision):
-- T+1 settlement: shares bought today cannot be sold until the next trading day
-- Daily price limits: main board ±10%, STAR/ChiNext ±20%, Beijing Stock Exchange ±30%.
-  Risk-warning stocks (ST/*ST) do NOT get a narrower band: since 2026-07-06 main-board
-  ST/*ST moved from ±5% to ±10% (same as ordinary main-board shares), and STAR/ChiNext
-  ST/*ST have always been ±20%.
-- Newly listed stocks have NO price limit for their first 5 trading days (first day only
-  on the Beijing Stock Exchange) — this matters most for recently-IPO'd names.
-- Minimum lot size: 100 shares (1 手) on main board and ChiNext, in 100-share multiples;
-  STAR board is 200 shares minimum, incrementing by 1 share; Beijing Stock Exchange is
-  100 shares minimum, incrementing by 1 share.
-- Trading hours (Beijing time): opening call auction 09:15-09:25, continuous trading
-  09:30-11:30 and 13:00-14:57, closing call auction 14:57-15:00. Since 2026-07-06 the
-  after-hours fixed-price session (15:05-15:30, traded at the closing price) covers all
-  A-shares and ETFs.
-- ST/delisting risk: ST or *ST status signals regulatory warning; factor into position sizing
-- Margin eligibility: not all A-shares are margin-eligible; assume cash-only unless stated
-
----
-
-**Rating Scale** (use exactly one):
-- **Buy**: Strong conviction to enter or add to position
-- **Overweight**: Favorable outlook, gradually increase exposure
-- **Hold**: Maintain current position, no action needed
-- **Underweight**: Reduce exposure, take partial profits
-- **Sell**: Exit position or avoid entry
-
-**Context:**
-- Research Manager's investment plan: **{research_plan}**
-- Trader's transaction proposal: **{trader_plan}**
-{lessons_line}
-**Risk Analysts Debate History:**
-{history}
-
----
-
-Be decisive and ground every conclusion in specific evidence from the analysts.{_NO_LEVELS_RULE}{get_language_instruction()}"""
+        prompt = build_pm_prompt(
+            {
+                "instrument_context": instrument_context,
+                "research_plan": research_plan,
+                "trader_plan": trader_plan,
+                "lessons_line": lessons_line,
+                "history": history,
+                "language_instruction": get_language_instruction(),
+            },
+            overrides=prompt_override,
+        )
 
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,

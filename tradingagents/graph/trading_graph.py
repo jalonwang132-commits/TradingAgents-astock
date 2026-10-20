@@ -66,6 +66,11 @@ _ANALYST_ROLES = frozenset({
     "market", "social", "news", "fundamentals", "policy", "hot_money", "lockup",
 })
 
+# 默认顺序与 GraphSetup 的选项目录一致；Web 团队页可在本次分析里关掉其中几位。
+_DEFAULT_ANALYSTS = (
+    "market", "social", "news", "fundamentals", "policy", "hot_money", "lockup",
+)
+
 # 各家 provider 私有的参数：换了 provider 就不能带过去（别家可能直接拒收）。
 # ⚠️ 超时/重试**不在**这张表里——它们由 `_resilience_kwargs()` 按目标 provider
 #    重算（见那里的注释）。放进来会变成第二道判据，两道判据迟早对不上。
@@ -174,7 +179,7 @@ class TradingAgentsGraph:
 
     def __init__(
         self,
-        selected_analysts=["market", "social", "news", "fundamentals", "policy", "hot_money", "lockup"],
+        selected_analysts=None,
         debug=False,
         config: Dict[str, Any] = None,
         callbacks: Optional[List] = None,
@@ -182,7 +187,9 @@ class TradingAgentsGraph:
         """Initialize the trading agents graph and components.
 
         Args:
-            selected_analysts: List of analyst types to include
+            selected_analysts: List of analyst types to include. ``None`` 时读
+                ``config["selected_analysts"]``，再回落到全部 7 位分析师——
+                Web「投研团队」页可以关掉某几位分析师。
             debug: Whether to run in debug mode
             config: Configuration dictionary. If None, uses default config
             callbacks: Optional list of callback handlers (e.g., for tracking LLM/tool stats)
@@ -190,6 +197,22 @@ class TradingAgentsGraph:
         self.debug = debug
         self.config = merge_config(config)
         self.callbacks = callbacks or []
+
+        if selected_analysts is None:
+            selected_analysts = self.config.get("selected_analysts") or list(
+                _DEFAULT_ANALYSTS
+            )
+        self.selected_analysts = list(selected_analysts)
+
+        # 提示词覆盖表来自 Web「投研团队」页。角色名写错如果被静默忽略，用户会
+        # 以为改动生效了、实际没有——和 role_llms 一样当场报错。
+        prompt_overrides = self.config.get("agent_prompts") or {}
+        unknown_prompts = sorted(set(prompt_overrides) - set(ROLE_KEYS))
+        if unknown_prompts:
+            raise ValueError(
+                f"agent_prompts 里有无法识别的角色名：{unknown_prompts}。"
+                f"合法角色：{', '.join(ROLE_KEYS)}。"
+            )
 
         # Update the interface's config
         set_config(self.config)
@@ -327,6 +350,7 @@ class TradingAgentsGraph:
             self.tool_nodes,
             self.conditional_logic,
             resolve_llm=self.role_llms.get,
+            prompt_overrides=prompt_overrides,
         )
 
         self.propagator = Propagator()
@@ -339,7 +363,7 @@ class TradingAgentsGraph:
         self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph: keep the workflow for recompilation with a checkpointer.
-        self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        self.workflow = self.graph_setup.setup_graph(self.selected_analysts)
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
@@ -809,6 +833,11 @@ class TradingAgentsGraph:
         self.log_states_dict[str(trade_date)] = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],
+            # 记录本次实际参与的团队编排，历史报告在「投研团队」页回看状态时
+            # 才能区分「当时未参与」和「当时跑了但报告为空」。
+            "selected_analysts": list(self.selected_analysts),
+            "max_debate_rounds": self.config.get("max_debate_rounds"),
+            "max_risk_discuss_rounds": self.config.get("max_risk_discuss_rounds"),
             "market_report": final_state["market_report"],
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],

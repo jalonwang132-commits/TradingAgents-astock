@@ -6,22 +6,18 @@ import functools
 
 from langchain_core.messages import AIMessage
 
+from tradingagents.agents.prompt_builder import build_trader_messages
 from tradingagents.agents.schemas import TraderProposal, render_trader_proposal
-from tradingagents.agents.utils.agent_utils import build_instrument_context, get_language_instruction
+from tradingagents.agents.utils.agent_utils import (
+    build_instrument_context,
+    get_language_instruction,
+)
 from tradingagents.agents.utils.structured import (
     bind_structured,
     invoke_structured_or_freetext,
 )
 
-# The schema alone cannot stop the model from putting price levels into the
-# free-text reasoning field, so the prompt says it explicitly too.
-_NO_LEVELS_INSTRUCTION = (
-    "Explain the reasoning behind the direction. Do NOT state entry prices, "
-    "stop-loss levels, target prices or position sizes for this security."
-)
-
-
-def create_trader(llm):
+def create_trader(llm, prompt_override=None):
     structured_llm = bind_structured(llm, TraderProposal, "Trader")
 
     def trader_node(state, name):
@@ -44,44 +40,22 @@ def create_trader(llm):
             astock_context_parts.append(f"Lockup Expiry / Insider Reduction Report:\n{lockup_report}")
         astock_context = "\n\n".join(astock_context_parts)
 
-        messages = [
+        astock_context_block = (
+            f"Additional A-Stock Analyst Context:\n{astock_context}\n\n"
+            if astock_context
+            else ""
+        )
+
+        messages = build_trader_messages(
             {
-                "role": "system",
-                "content": (
-                    "You are a trading agent specialising in A-share (China mainland) stocks. "
-                    "Translate the Research Manager's investment plan into a structured "
-                    "transaction view. You must factor in A-stock trading constraints:\n"
-                    "- T+1 settlement: shares bought today cannot be sold until the next trading day\n"
-                    "- Daily price limits: main board ±10%, STAR/ChiNext ±20%, Beijing Stock "
-                    "Exchange ±30%. ST/*ST does NOT narrow the band — main-board ST/*ST moved "
-                    "from ±5% to ±10% on 2026-07-06, and STAR/ChiNext ST/*ST have always been ±20%\n"
-                    "- Newly listed stocks have no price limit for their first 5 trading days "
-                    "(Beijing Stock Exchange: first day only)\n"
-                    "- Minimum lot: 100 shares on main board and ChiNext (100-share multiples); "
-                    "STAR board 200 shares minimum (1-share increments); Beijing Stock Exchange "
-                    "100 shares minimum (1-share increments)\n"
-                    "- Trading hours (Beijing time): call auction 09:15-09:25, continuous "
-                    "09:30-11:30 / 13:00-14:57, closing auction 14:57-15:00, after-hours "
-                    "fixed-price session 15:05-15:30 (all A-shares since 2026-07-06)\n"
-                    "Anchor your reasoning in the analysts' reports and the research plan. "
-                    f"{_NO_LEVELS_INSTRUCTION} "
-                    "（以上参数仅供技术研究参考，不构成投资建议）"
-                ),
+                "company_name": company_name,
+                "instrument_context": instrument_context,
+                "investment_plan": investment_plan,
+                "astock_context_block": astock_context_block,
+                "language_instruction": get_language_instruction(),
             },
-            {
-                "role": "user",
-                "content": (
-                    f"Based on a comprehensive analysis by a team of analysts (including market, "
-                    f"sentiment, news, fundamentals, policy, capital flow, and lockup/reduction "
-                    f"specialists), here is an investment plan for {company_name}.\n\n"
-                    f"{instrument_context}\n\n"
-                    f"Proposed Investment Plan:\n{investment_plan}\n\n"
-                    + (f"Additional A-Stock Analyst Context:\n{astock_context}\n\n" if astock_context else "")
-                    + "Leverage these insights to craft the transaction view."
-                    + get_language_instruction()
-                ),
-            },
-        ]
+            overrides=prompt_override,
+        )
 
         trader_plan = invoke_structured_or_freetext(
             structured_llm,

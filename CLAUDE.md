@@ -6,7 +6,7 @@
 - **仓库**: https://github.com/simonlin1212/TradingAgents-astock
 - **协议**: Apache 2.0
 - **Python**: >=3.10
-- **当前版本**: 0.5.21（2026-10-11）
+- **当前版本**: 0.5.22（2026-10-20）
   ⚠️ 改版本号时**三处要一起改**：`pyproject.toml` / `CHANGELOG.md` / 这一行。漏了这行会让后续 agent 和发版流程读到旧版本（`tests/test_version_consistency.py` 会拦）。
 
 ## 架构
@@ -31,8 +31,24 @@
 - `tradingagents/dataflows/a_stock.py` — A 股数据 vendor，所有数据获取入口
 - `tradingagents/dataflows/utils.py` — `safe_ticker_component` 路径安全校验 + 中文 ticker 自动解析
 - `tradingagents/agents/` — 7 个 Analyst + Bull/Bear 辩论逻辑
+- `tradingagents/agents/prompt_defaults.py` — **所有角色内置提示词的唯一来源**
+- `tradingagents/agents/prompt_registry.py` — 角色目录（名称/分组/工具/输出字段/变量）
+- `tradingagents/agents/prompt_builder.py` — 默认模板 + 覆盖值的组装；页面预览与 agent 共用
 - `web/` — Streamlit Web UI
+- `web/components/team_view.py` — 「投研团队」页（拓扑 + 提示词编辑 + 编排）
+- `web/team_store.py` — 团队配置持久化（`~/.tradingagents/team_config.json`）
+- `web/team_state.py` — 从 graph state 推导 16 角色实时状态
 - `cli/` — CLI 入口
+
+### 提示词覆盖链路
+`Web 团队页` → `web/team_store.py` → `config["agent_prompts"]` →
+`TradingAgentsGraph` → `GraphSetup.prompts_for(role)` → 各 `create_*` 工厂的
+`prompt_override` → `prompt_builder` 渲染。
+**新增 agent 时不要在自己文件里硬编码提示词**，按下面三步走：
+1. 在 `prompt_defaults.py` 加默认模板；
+2. 在 `prompt_registry.ROLE_SPECS` 加角色元数据（parts / variables / tools）；
+3. agent 节点调 `build_*` 或 `render_role_prompt`，并把 `prompt_override` 透传进来。
+页面会自动出现该角色，预览与实际请求不会分叉。
 
 ### 中文股票名解析链路
 用户/LLM 输入 → `safe_ticker_component` 检测中文 → `resolve_ticker()` → `_build_name_code_map()`（mootdx 全市场映射，缓存）→ 返回 6 位代码
@@ -108,7 +124,7 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]`）跑 `pytest tests/` 应当是
-562 passed / 14 skipped / **0 failed**（v0.5.21 实测，Python 3.12；跳过的都是没装的可选依赖 claude-agent-sdk / langchain-google-genai）。出现 failed 就是真回归。**
+625 passed / 14 skipped / **0 failed**（2026-10-20 实测，Python 3.13；跳过的都是没装的可选依赖 claude-agent-sdk / langchain-google-genai）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记跳过——⚠️ **占位类型绝不要用 `Exception`
 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进 `_FALLBACK_ERRORS` 后让"订阅凭据
 失效不得降级到计费 provider"这条护栏彻底失效（v0.5.4 修）。

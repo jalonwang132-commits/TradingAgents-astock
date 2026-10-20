@@ -1,5 +1,7 @@
 from typing import Annotated
 
+from tradingagents.agents.prompt_builder import build_quality_review_prompt
+
 REPORT_FIELDS = {
     "market": "market_report",
     "social": "sentiment_report",
@@ -65,57 +67,23 @@ def _hard_check_report(analyst_type: str, report: str) -> tuple:
 
 
 def _build_review_prompt(
-    reports: dict, trade_date: str, ticker: str
+    reports: dict,
+    trade_date: str,
+    ticker: str,
+    prompt_override=None,
+    selected_analysts=None,
 ) -> str:
-    """Build the LLM review prompt."""
-    report_sections = []
-    for analyst_type, field in REPORT_FIELDS.items():
-        name = ANALYST_NAMES[analyst_type]
-        content = reports.get(field, "（未运行）")
-        if not content:
-            content = "（报告为空）"
-        if len(content) > 3000:
-            content = content[:3000] + "\n... (truncated for review)"
-        report_sections.append(f"### {name} ({analyst_type})\n{content}")
-
-    all_reports = "\n\n".join(report_sections)
-
-    return f"""你是数据质量审核员。以下是 7 位分析师对 {ticker} 在 {trade_date} 的研究报告。请逐一审核。
-
-{all_reports}
-
----
-
-请按以下格式输出审核结果（不要输出其他内容）：
-
-## 数据质量审核报告
-
-**标的**: {ticker} | **日期**: {trade_date}
-
-| 分析师 | 评级 | 数据时效 | 缺失项 | 备注 |
-|--------|------|----------|--------|------|
-| 技术分析师 | A/B/C/D/F | 是否匹配交易日 | 列出缺失的必采项 | 简要说明 |
-| 情绪分析师 | ... | ... | ... | ... |
-| 新闻分析师 | ... | ... | ... | ... |
-| 基本面分析师 | ... | ... | ... | ... |
-| 政策分析师 | ... | ... | ... | ... |
-| 游资追踪师 | ... | ... | ... | ... |
-| 解禁监控师 | ... | ... | ... | ... |
-
-**整体评级**: A/B/C/D/F
-**数据可信度**: 高/中/低
-**建议**: （如有数据缺失，提醒辩论阶段谨慎使用该报告）
-
-评级标准：
-- A: 必采清单全部覆盖，数据时效匹配，有汇总表格
-- B: 缺少 1-2 项非关键数据，整体可用
-- C: 缺少 3+ 项或有数据时效问题，需谨慎使用
-- D: 大量缺失或主要为失败信息，可信度低
-- F: 报告为空或完全无效
-"""
+    """Build the LLM review prompt (template is user-editable in the Web UI)."""
+    return build_quality_review_prompt(
+        reports,
+        trade_date,
+        ticker,
+        overrides=prompt_override,
+        selected_analysts=selected_analysts,
+    )
 
 
-def create_quality_gate(llm):
+def create_quality_gate(llm, prompt_override=None, selected_analysts=None):
     """Factory for the data quality gate node.
 
     Sits between the last analyst Msg Clear and Bull Researcher.
@@ -131,8 +99,19 @@ def create_quality_gate(llm):
         for analyst_type, field in REPORT_FIELDS.items():
             reports[field] = state.get(field, "")
 
+        # 团队页可以关掉分析师。没参与的角色不该被记成「报告为空」拉低整体
+        # 评级，更不该让 fail_count 达到 4 而跳过 LLM 复审。
+        active_types = [
+            analyst_type
+            for analyst_type in REPORT_FIELDS
+            if not selected_analysts or analyst_type in selected_analysts
+        ]
+        if not active_types:
+            active_types = list(REPORT_FIELDS)
+
         hard_results = {}
-        for analyst_type, field in REPORT_FIELDS.items():
+        for analyst_type in active_types:
+            field = REPORT_FIELDS[analyst_type]
             grade, detail = _hard_check_report(analyst_type, reports[field])
             hard_results[analyst_type] = (grade, detail)
 
@@ -149,7 +128,13 @@ def create_quality_gate(llm):
         llm_review = ""
         if fail_count < 4:
             try:
-                review_prompt = _build_review_prompt(reports, trade_date, ticker)
+                review_prompt = _build_review_prompt(
+                    reports,
+                    trade_date,
+                    ticker,
+                    prompt_override=prompt_override,
+                    selected_analysts=active_types,
+                )
                 response = llm.invoke(review_prompt)
                 llm_review = response.content
             except Exception as e:

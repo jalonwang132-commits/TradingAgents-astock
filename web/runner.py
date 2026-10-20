@@ -10,6 +10,7 @@ from typing import Any
 from web.history import clear_incomplete_task, record_incomplete_task
 from web.progress import PIPELINE_STAGES, ProgressTracker
 from web.stock_display import normalize_report_state_mentions, normalize_stock_mentions
+from web.team_state import derive_role_states
 
 
 _REPORT_KEY_TO_STAGE = {s["report_key"]: s["id"] for s in PIPELINE_STAGES}
@@ -79,12 +80,20 @@ def _detect_completed_stages(
 
 
 def _infer_active_stage(tracker: ProgressTracker) -> None:
-    """Set the current_stage to the first non-completed stage."""
-    from web.progress import STAGE_IDS
-    for sid in STAGE_IDS:
-        if tracker.stage_status(sid) == "pending":
-            tracker.mark_stage_active(sid)
+    """Set the current_stage to the first non-completed, enabled stage.
+
+    当前阶段已经是 ``active`` 时**必须保留**：stream_mode="values" 在分析师
+    的每次工具调用后都会产出一个 chunk，如果这里把 active 当成"跳过"去点亮
+    下一个 pending 阶段，进度页就会在技术分析师还在取数时显示情绪分析进行中。
+    """
+    for sid in tracker.expected_stage_ids():
+        status = tracker.stage_status(sid)
+        if status == "done":
+            continue
+        if status == "active":
             return
+        tracker.mark_stage_active(sid)
+        return
 
 
 def _run(ticker: str, trade_date: str, config: dict, tracker: ProgressTracker) -> None:
@@ -134,6 +143,14 @@ def _run(ticker: str, trade_date: str, config: dict, tracker: ProgressTracker) -
 
             last_chunk = chunk
             _detect_completed_stages(chunk, tracker)
+            tracker.update_role_states(
+                derive_role_states(
+                    chunk,
+                    tracker.selected_analysts,
+                    tracker.max_debate_rounds,
+                    tracker.max_risk_rounds,
+                )
+            )
             _infer_active_stage(tracker)
             record_incomplete_task(
                 ticker,
@@ -176,7 +193,22 @@ def run_analysis_in_thread(
     tracker.ticker = ticker
     tracker.trade_date = trade_date
     tracker.is_running = True
-    tracker.mark_stage_active("market")
+    tracker.selected_analysts = list(
+        config.get("selected_analysts") or ()
+    )
+    tracker.max_debate_rounds = int(config.get("max_debate_rounds") or 1)
+    tracker.max_risk_rounds = int(config.get("max_risk_discuss_rounds") or 1)
+    tracker.update_role_states(
+        derive_role_states(
+            {},
+            tracker.selected_analysts,
+            tracker.max_debate_rounds,
+            tracker.max_risk_rounds,
+        )
+    )
+    expected_stages = tracker.expected_stage_ids()
+    if expected_stages:
+        tracker.mark_stage_active(expected_stages[0])
     record_incomplete_task(
         ticker,
         trade_date,

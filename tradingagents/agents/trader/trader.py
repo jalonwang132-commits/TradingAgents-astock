@@ -21,7 +21,7 @@ def create_trader(llm, prompt_override=None):
     structured_llm = bind_structured(llm, TraderProposal, "Trader")
 
     def trader_node(state, name):
-        company_name = state["company_of_interest"]
+        company_name = state.get("company_of_interest", "")
         instrument_context = build_instrument_context(company_name)
         investment_plan = state["investment_plan"]
 
@@ -48,6 +48,8 @@ def create_trader(llm, prompt_override=None):
 
         messages = build_trader_messages(
             {
+                "ticker": company_name,
+                "date": state.get("trade_date", ""),
                 "company_name": company_name,
                 "instrument_context": instrument_context,
                 "investment_plan": investment_plan,

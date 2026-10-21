@@ -323,6 +323,7 @@ streamlit run web/app.py
 - **看每个角色的提示词**：点任意角色卡片，可在「编辑提示词」里直接改，在「完整提示词预览」里看到**真正会发出去**的 system / user 全文（报告、辩论历史等运行时变量用示例值占位）；「角色详情」列出该角色绑定的工具、输出字段、模型档位和模板变量。
 - **改完立即用于下一次分析**：保存后写入 `~/.tradingagents/team_config.json`，下一次「开始分析」生效；正在跑的任务不会被中途改写。支持单角色恢复默认、全部恢复默认、导入/导出 JSON。
 - **调配团队**：在「团队编排」里选择本次参与的分析师（至少 1 位）、多空辩论轮数（1-5）、风险辩论轮数（1-5）。
+- **注入个人战法**：在「🎯 我的战法」里新增策略包，填写名称、作用角色和规则（例如「RSI(14) > 80 且 MACD 死叉 → 超级空头」）。战法会追加到对应角色提示词末尾，与内置基础提示词分开保存；支持启用/停用、按角色生效、删除和合并预览。
 
 对应的 `config` 键：
 
@@ -333,7 +334,18 @@ config["agent_prompts"] = {          # 只写改过的角色/片段，其余用�
 }
 config["selected_analysts"] = ["market", "social", "news", "fundamentals",
                                "policy", "hot_money", "lockup"]
+config["strategy_packs"] = [         # 「我的战法」，scope 为空 = 全部角色
+    {
+        "id": "sp_demo",
+        "name": "超级空头",
+        "scope": ["market", "bear", "risk_conservative"],
+        "content": "RSI(14) > 80 且 MACD 死叉 => 超级空头，置信度 0.8。",
+        "enabled": True,
+    }
+]
 ```
+
+战法里可以用 `{ticker}` / `{date}`（所有角色），分析师还可用 `{lookback}`，辩论/决策角色可用 `{history}`、`{reports}` 等。**当前工具不支持的指标（KDJ/OBV/ADX 等）写在战法里也取不到数**，需要先扩展 `get_indicators`；需要硬性判定的规则，建议后续做成代码级规则引擎，而不是只靠 LLM 执行。
 
 内置默认提示词集中在 `tradingagents/agents/prompt_defaults.py`，页面与 agent 共用同一份，不存在「页面显示一份、实际请求另一份」的问题。
 

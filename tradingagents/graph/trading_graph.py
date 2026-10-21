@@ -838,6 +838,12 @@ class TradingAgentsGraph:
             "selected_analysts": list(self.selected_analysts),
             "max_debate_rounds": self.config.get("max_debate_rounds"),
             "max_risk_discuss_rounds": self.config.get("max_risk_discuss_rounds"),
+            # 记录本次生效的「我的战法」，便于回看报告时审计当时的个性化规则。
+            "strategy_packs": [
+                dict(pack)
+                for pack in self.config.get("strategy_packs") or []
+                if pack.get("enabled")
+            ],
             "market_report": final_state["market_report"],
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],

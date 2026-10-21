@@ -40,6 +40,7 @@ def create_hot_money_tracker(llm, prompt_override=None):
             [tool.name for tool in tools],
             current_date,
             instrument_context,
+            ticker=state["company_of_interest"],
         )
 
         prompt = ChatPromptTemplate.from_messages(

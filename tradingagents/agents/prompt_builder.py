@@ -43,14 +43,80 @@ def _language_instruction() -> str:
     return get_language_instruction()
 
 
+STRATEGY_HEADER = "## 用户自定义战法（优先级高于上述通用框架）"
+STRATEGY_NOTE = (
+    "以下规则由用户提供。与上面的通用框架冲突时，以本段为准；"
+    "但不要改变本角色规定的输出格式、工具调用方式和数据引用要求。"
+    "每条结论尽量引用具体指标数值、日期和数据来源；数据不足时明确写 [数据缺失]，不要编造。"
+)
+
+
+def active_strategy_packs(
+    role: str,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """返回作用于某角色的、已启用的战法包。
+
+    ``strategy_packs=None`` 时读运行期 config（TradingAgentsGraph 已经 set_config
+    过）；Web 预览会显式传入团队配置里的列表，避免读到上一次运行残留。
+    """
+    if strategy_packs is None:
+        from tradingagents.dataflows.config import get_config
+
+        strategy_packs = get_config().get("strategy_packs") or []
+    if not isinstance(strategy_packs, (list, tuple)):
+        return []
+    active: list[dict[str, Any]] = []
+    for pack in strategy_packs:
+        if not isinstance(pack, Mapping):
+            continue
+        if not pack.get("enabled", True):
+            continue
+        content = str(pack.get("content") or "").strip()
+        if not content:
+            continue
+        scope = pack.get("scope") or []
+        if isinstance(scope, str):
+            scope = [scope]
+        if scope and role not in scope:
+            continue
+        active.append(
+            {
+                "id": str(pack.get("id") or ""),
+                "name": str(pack.get("name") or "未命名战法").strip(),
+                "content": content,
+            }
+        )
+    return active
+
+
+def build_strategy_block(
+    role: str,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
+) -> str:
+    """把作用于该角色的战法包拼成 prompt 末尾的独立段落。"""
+    active = active_strategy_packs(role, strategy_packs)
+    if not active:
+        return ""
+    lines = ["", "", STRATEGY_HEADER, STRATEGY_NOTE]
+    for index, pack in enumerate(active, start=1):
+        lines.append(f"\n### {index}. {pack['name']}\n{pack['content']}")
+    return "\n".join(lines).rstrip()
+
+
 def render_role_prompt(
     role: str,
     part: str,
     overrides: Mapping[str, Any] | None,
     values: Mapping[str, Any],
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> str:
-    """取生效模板并注入变量。"""
-    return render_prompt(get_prompt(role, part, overrides), values)
+    """取生效模板并注入变量；模板末尾追加「我的战法」。"""
+    template = get_prompt(role, part, overrides)
+    strategy = build_strategy_block(role, strategy_packs)
+    if strategy:
+        template = f"{template}\n{strategy}"
+    return render_prompt(template, values)
 
 
 def build_analyst_system(
@@ -61,13 +127,23 @@ def build_analyst_system(
     instrument_context: str,
     lookback: int | None = None,
     language_instruction: str | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
+    ticker: str = "",
 ) -> str:
     """组装分析师完整的 system prompt（通用协作头 + 角色指令 + 日期/标的）。"""
     instruction = render_role_prompt(
         role,
         "system",
         overrides,
-        {"lookback": lookback if lookback is not None else 30},
+        {
+            "lookback": lookback if lookback is not None else 30,
+            # 让「我的战法」里可以写 {ticker} / {date}；角色模板本身不用也无妨。
+            "ticker": ticker,
+            "date": current_date,
+            "company_name": ticker,
+            "instrument_context": instrument_context,
+        },
+        strategy_packs=strategy_packs,
     )
     instruction += (
         _language_instruction()
@@ -123,6 +199,7 @@ def build_quality_review_prompt(
     ticker: str,
     overrides: Mapping[str, Any] | None = None,
     selected_analysts: Iterable[str] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> str:
     roles = selected_analyst_roles(selected_analysts)
     reports_block = (
@@ -141,36 +218,53 @@ def build_quality_review_prompt(
             "reports": reports_block,
             "analyst_rows": build_analyst_rows(roles),
         },
+        strategy_packs=strategy_packs,
     )
 
 
 def build_bull_prompt(
     values: Mapping[str, Any],
     overrides: Mapping[str, Any] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> str:
-    return render_role_prompt("bull", "argument", overrides, values)
+    return render_role_prompt(
+        "bull", "argument", overrides, values, strategy_packs=strategy_packs
+    )
 
 
 def build_bear_prompt(
     values: Mapping[str, Any],
     overrides: Mapping[str, Any] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> str:
-    return render_role_prompt("bear", "argument", overrides, values)
+    return render_role_prompt(
+        "bear", "argument", overrides, values, strategy_packs=strategy_packs
+    )
 
 
 def build_research_manager_prompt(
     values: Mapping[str, Any],
     overrides: Mapping[str, Any] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> str:
-    return render_role_prompt("research_manager", "plan", overrides, values)
+    return render_role_prompt(
+        "research_manager", "plan", overrides, values, strategy_packs=strategy_packs
+    )
 
 
 def build_trader_messages(
     values: Mapping[str, Any],
     overrides: Mapping[str, Any] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> list[dict[str, str]]:
-    """交易员走 system + user 两条消息，和原实现保持一致。"""
-    system = render_role_prompt("trader", "system", overrides, values)
+    """交易员走 system + user 两条消息，和原实现保持一致。
+
+    战法只追加到 system：user 是本次投资的动态计划，重复注入会让模型以为
+    用户给了两份不同来源的规则。
+    """
+    system = render_role_prompt(
+        "trader", "system", overrides, values, strategy_packs=strategy_packs
+    )
     user = render_role_prompt("trader", "user", overrides, values)
     return [
         {"role": "system", "content": system},
@@ -182,17 +276,23 @@ def build_risk_prompt(
     role: str,
     values: Mapping[str, Any],
     overrides: Mapping[str, Any] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> str:
     if role not in ("risk_aggressive", "risk_neutral", "risk_conservative"):
         raise ValueError(f"不是风险委员会角色: {role}")
-    return render_role_prompt(role, "argument", overrides, values)
+    return render_role_prompt(
+        role, "argument", overrides, values, strategy_packs=strategy_packs
+    )
 
 
 def build_pm_prompt(
     values: Mapping[str, Any],
     overrides: Mapping[str, Any] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> str:
-    return render_role_prompt("portfolio_manager", "decision", overrides, values)
+    return render_role_prompt(
+        "portfolio_manager", "decision", overrides, values, strategy_packs=strategy_packs
+    )
 
 
 # ── 预览用示例数据 ──────────────────────────────────────────────────────────
@@ -267,6 +367,7 @@ def preview_prompt_parts(
     lookback: int = 30,
     language_instruction: str | None = None,
     selected_analysts: Iterable[str] | None = None,
+    strategy_packs: Iterable[Mapping[str, Any]] | None = None,
 ) -> list[tuple[str, str]]:
     """返回 [(片段名, 完整提示词)]，供 Web 页面展示真正会发出去的内容。"""
     spec = ROLE_SPECS[role]
@@ -283,6 +384,8 @@ def preview_prompt_parts(
             values["instrument_context"],
             lookback,
             language_instruction=values["language_instruction"],
+            strategy_packs=strategy_packs,
+            ticker=ticker,
         )
         return [(spec.parts[0].label, full)]
 
@@ -293,32 +396,71 @@ def preview_prompt_parts(
             ticker,
             overrides,
             selected_analysts=selected_analysts,
+            strategy_packs=strategy_packs,
         )
         return [(spec.parts[0].label, full)]
 
     if role == "trader":
-        messages = build_trader_messages(values, overrides)
+        messages = build_trader_messages(
+            values, overrides, strategy_packs=strategy_packs
+        )
         return [
             (spec.parts[0].label, messages[0]["content"]),
             (spec.parts[1].label, messages[1]["content"]),
         ]
 
     if role == "bull":
-        return [(spec.parts[0].label, build_bull_prompt(values, overrides))]
+        return [
+            (
+                spec.parts[0].label,
+                build_bull_prompt(values, overrides, strategy_packs=strategy_packs),
+            )
+        ]
     if role == "bear":
-        return [(spec.parts[0].label, build_bear_prompt(values, overrides))]
+        return [
+            (
+                spec.parts[0].label,
+                build_bear_prompt(values, overrides, strategy_packs=strategy_packs),
+            )
+        ]
     if role == "research_manager":
         return [
-            (spec.parts[0].label, build_research_manager_prompt(values, overrides))
+            (
+                spec.parts[0].label,
+                build_research_manager_prompt(
+                    values, overrides, strategy_packs=strategy_packs
+                ),
+            )
         ]
     if role.startswith("risk_"):
-        return [(spec.parts[0].label, build_risk_prompt(role, values, overrides))]
+        return [
+            (
+                spec.parts[0].label,
+                build_risk_prompt(
+                    role, values, overrides, strategy_packs=strategy_packs
+                ),
+            )
+        ]
     if role == "portfolio_manager":
-        return [(spec.parts[0].label, build_pm_prompt(values, overrides))]
+        return [
+            (
+                spec.parts[0].label,
+                build_pm_prompt(values, overrides, strategy_packs=strategy_packs),
+            )
+        ]
 
     # 兜底：按片段逐一渲染，保证新增角色也能预览。
     return [
-        (part.label, render_role_prompt(role, part.key, overrides, values))
+        (
+            part.label,
+            render_role_prompt(
+                role,
+                part.key,
+                overrides,
+                values,
+                strategy_packs=strategy_packs,
+            ),
+        )
         for part in spec.parts
     ]
 

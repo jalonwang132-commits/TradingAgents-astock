@@ -50,6 +50,13 @@
 3. agent 节点调 `build_*` 或 `render_role_prompt`，并把 `prompt_override` 透传进来。
 页面会自动出现该角色，预览与实际请求不会分叉。
 
+「我的战法」是独立于 `agent_prompts` 的个性化层：`config["strategy_packs"]` 里是
+`{id, name, scope, content, enabled}`；`prompt_builder.active_strategy_packs()` 按角色
+过滤后追加到提示词末尾，页面预览同样走这条合并逻辑。`scope` 为空 = 全部角色。
+战法里可用 `{ticker}` / `{date}`（所有角色）、`{lookback}`（分析师）、
+`{history}` / `{reports}` 等角色变量。**当前 `get_indicators` 只支持固定指标集**，
+用户写了 KDJ/OBV 等也取不到数；需要硬性判定的规则应后续做成代码级规则引擎。
+
 ### 中文股票名解析链路
 用户/LLM 输入 → `safe_ticker_component` 检测中文 → `resolve_ticker()` → `_build_name_code_map()`（mootdx 全市场映射，缓存）→ 返回 6 位代码
 
@@ -124,7 +131,7 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]`）跑 `pytest tests/` 应当是
-625 passed / 14 skipped / **0 failed**（2026-10-20 实测，Python 3.13；跳过的都是没装的可选依赖 claude-agent-sdk / langchain-google-genai）。出现 failed 就是真回归。**
+654 passed / 14 skipped / **0 failed**（2026-10-20 实测，Python 3.13；跳过的都是没装的可选依赖 claude-agent-sdk / langchain-google-genai）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记跳过——⚠️ **占位类型绝不要用 `Exception`
 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进 `_FALLBACK_ERRORS` 后让"订阅凭据
 失效不得降级到计费 provider"这条护栏彻底失效（v0.5.4 修）。

@@ -27,6 +27,7 @@ def create_market_analyst(llm, prompt_override=None):
             current_date,
             instrument_context,
             lookback=lookback,
+            ticker=state["company_of_interest"],
         )
 
         prompt = ChatPromptTemplate.from_messages(

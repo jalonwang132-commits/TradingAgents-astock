@@ -1,13 +1,15 @@
 """「投研团队」页面：可视化 16 个角色 + 在线编辑提示词。
 
-页面分三块：
+页面分四块：
 
-1. **流水线视图** —— 7 位分析师 → 质量门控 → 多空辩论 → 交易员 → 风险委员会，
-   每张卡片显示该角色本次分析的实时状态（等待/进行中/已完成/未参与）。
+1. **流水线视图** —— 7 位分析师 → 质量门控 → 多空辩论 → 研究员 → 交易员 →
+   风险委员会，每张卡片显示该角色本次分析的实时状态（等待/进行中/已完成/未参与）。
 2. **角色提示词编辑器** —— 完整展示真正会发出去的提示词，支持变量、全文预览、
    保存/恢复默认。覆盖值写入 ``~/.tradingagents/team_config.json``，下一次
    「开始分析」立即生效。
-3. **团队编排** —— 选择参与的分析师、辩论轮数；改动同样持久化。
+3. **我的战法** —— 独立于基础提示词的个性化策略包，按角色生效、可启用/停用；
+   保存后追加到角色提示词末尾，预览会显示合并结果。
+4. **团队编排** —— 选择参与的分析师、辩论轮数；改动同样持久化。
 
 提示词不是「附加一句指令」而是完整模板：页面里看到的就是请求里的 system /
 user 文本（运行时变量以示例值展示）。删掉某个 `{变量}` 会导致该内容不再注入，
@@ -24,6 +26,7 @@ from typing import Any
 import streamlit as st
 
 from tradingagents.agents.prompt_builder import (
+    active_strategy_packs,
     preview_prompt_parts,
     variable_hints,
 )
@@ -31,6 +34,7 @@ from tradingagents.agents.prompt_registry import (
     ANALYST_ROLES,
     GROUP_LABELS,
     GROUP_ORDER,
+    ROLE_ORDER,
     ROLE_SPECS,
     TOOL_LABELS,
     absent_variables,
@@ -53,6 +57,10 @@ from web.team_state import (
     empty_role_states,
 )
 from web.team_store import (
+    MAX_STRATEGY_PACKS,
+    add_strategy_pack,
+    delete_strategy_pack,
+    get_strategy_pack,
     load_team_config,
     normalize_team_config,
     reset_all_prompts,
@@ -60,6 +68,7 @@ from web.team_store import (
     save_team_config,
     set_team_options,
     update_prompt,
+    update_strategy_pack,
 )
 
 _TEAM_CSS = """
@@ -177,7 +186,10 @@ _STATUS_DOTS = {
 def _team_config() -> dict[str, Any]:
     if "team_config" not in st.session_state:
         st.session_state["team_config"] = load_team_config()
-    return st.session_state["team_config"]
+    cfg = st.session_state["team_config"]
+    # 兼容升级前就已存在的 session（旧配置没有 strategy_packs 键）。
+    cfg.setdefault("strategy_packs", [])
+    return cfg
 
 
 def _persist(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -258,6 +270,221 @@ def _reset_all_cb() -> None:
     _notice("全部角色已恢复内置提示词。")
 
 
+def _strategy_scope_label(scope: list[str]) -> str:
+    if not scope:
+        return "全部角色"
+    labels = [
+        f"{ROLE_SPECS[role].icon}{ROLE_SPECS[role].name}"
+        for role in scope
+        if role in ROLE_SPECS
+    ]
+    return " / ".join(labels) if labels else "全部角色"
+
+
+def _clear_strategy_new_keys() -> None:
+    for key in list(st.session_state):
+        if key.startswith("sp_new_"):
+            st.session_state.pop(key, None)
+
+
+def _clear_strategy_keys() -> None:
+    for key in list(st.session_state):
+        if key.startswith("sp_"):
+            st.session_state.pop(key, None)
+    st.session_state.pop("strategy_pending_delete", None)
+
+
+def _new_strategy_draft() -> dict[str, Any]:
+    return {
+        "id": "new",
+        "name": "",
+        "scope": [],
+        "content": "",
+        "enabled": True,
+    }
+
+
+def _render_strategy_pack_form(
+    cfg: dict[str, Any], pack: dict[str, Any], *, is_new: bool
+) -> None:
+    """一条战法的编辑表单；保存后才写入 team_config。"""
+    prefix = "sp_new" if is_new else f"sp_pack_{pack['id']}"
+    name_key = f"{prefix}_name"
+    all_key = f"{prefix}_all"
+    scope_key = f"{prefix}_scope"
+    content_key = f"{prefix}_content"
+    enabled_key = f"{prefix}_enabled"
+
+    st.session_state.setdefault(name_key, pack.get("name") or "")
+    st.session_state.setdefault(all_key, not bool(pack.get("scope")))
+    st.session_state.setdefault(scope_key, list(pack.get("scope") or []))
+    st.session_state.setdefault(content_key, pack.get("content") or "")
+    st.session_state.setdefault(enabled_key, bool(pack.get("enabled", True)))
+
+    if not is_new:
+        st.caption(
+            f"状态：{'✅ 已启用' if pack.get('enabled') else '⏸️ 已停用'} · "
+            f"作用：{_strategy_scope_label(pack.get('scope') or [])}"
+        )
+
+    st.text_input(
+        "战法名称",
+        key=name_key,
+        placeholder="例：超级空头 / 我的量价纪律",
+    )
+    st.checkbox(
+        "应用到全部角色",
+        key=all_key,
+        help="不勾选时只作用于下面选中的角色；至少选一个角色。",
+    )
+    if not st.session_state[all_key]:
+        st.multiselect(
+            "作用角色",
+            options=list(ROLE_ORDER),
+            format_func=lambda role: f"{ROLE_SPECS[role].icon} {ROLE_SPECS[role].name}",
+            key=scope_key,
+            help="可以只给技术分析师，也可以同时给空方/风控/组合经理。",
+        )
+    st.text_area(
+        "战法内容",
+        key=content_key,
+        height=240,
+        placeholder=(
+            "例：\n## 超级空头\n"
+            "- RSI(14) > 80 且 MACD 死叉\n"
+            "- 成交量 < 5 日均量 × 0.8\n"
+            "- 判定：超级空头，置信度 0.8\n"
+            "- 失效条件：RSI 回落至 60 以下"
+        ),
+    )
+    st.caption(
+        "战法会追加到角色提示词末尾。可用 `{ticker}` / `{date}`；"
+        "其他变量取决于角色（分析师可用 `{lookback}`，辩论角色可用 `{history}` 等）。"
+        "当前工具不支持的指标（KDJ/OBV 等）写了也取不到数，需要后续扩展指标工具。"
+    )
+    st.checkbox("启用这条战法", key=enabled_key)
+
+    save_col, delete_col = st.columns([1, 1])
+    with save_col:
+        if st.button(
+            "💾 保存战法",
+            key=f"{prefix}_save",
+            type="primary",
+            use_container_width=True,
+        ):
+            name = st.session_state[name_key].strip()
+            content = st.session_state[content_key].strip()
+            all_roles = st.session_state[all_key]
+            scope = [] if all_roles else list(st.session_state[scope_key])
+            if not name:
+                st.error("给战法起个名字，方便在角色卡片和提示词里识别。")
+            elif not content:
+                st.error("战法内容不能为空。")
+            elif not all_roles and not scope:
+                st.error("请至少选择一个作用角色，或勾选「应用到全部角色」。")
+            else:
+                if is_new:
+                    new_cfg = add_strategy_pack(
+                        cfg,
+                        name=name,
+                        scope=scope,
+                        content=content,
+                        enabled=st.session_state[enabled_key],
+                    )
+                else:
+                    new_cfg = update_strategy_pack(
+                        cfg,
+                        pack["id"],
+                        name=name,
+                        scope=scope,
+                        content=content,
+                        enabled=st.session_state[enabled_key],
+                    )
+                st.session_state["team_config"] = _persist(new_cfg)
+                _notice(
+                    f"战法「{name}」已保存；下一次分析生效。"
+                    if is_new
+                    else f"战法「{name}」已更新；下一次分析生效。"
+                )
+                if is_new:
+                    _clear_strategy_new_keys()
+                st.rerun()
+    with delete_col:
+        if not is_new:
+            if st.button(
+                "🗑️ 删除此战法",
+                key=f"{prefix}_delete",
+                use_container_width=True,
+            ):
+                st.session_state["strategy_pending_delete"] = pack["id"]
+                st.rerun()
+
+
+def _render_strategy_library(cfg: dict[str, Any]) -> None:
+    packs = list(cfg.get("strategy_packs") or [])
+    enabled_count = sum(1 for pack in packs if pack.get("enabled"))
+
+    st.markdown("### 🎯 我的战法")
+    st.caption(
+        f"独立的个性化策略层，当前 **{enabled_count}/{len(packs)}** 条启用。"
+        " 战法只追加到作用角色的提示词末尾，不会改内置基础提示词；保存后下一次分析生效。"
+    )
+    st.caption(
+        "示例：`RSI(14) > 80 且 MACD 死叉 → 超级空头；置信度 0.8；RSI 回落 60 以下失效`。"
+        " 建议只勾选真正需要这套战法的角色；质量门控是审核角色，通常不需要交易战法。"
+    )
+
+    pending = st.session_state.get("strategy_pending_delete")
+    if pending:
+        pack = get_strategy_pack(cfg, pending)
+        if pack is None:
+            st.session_state.pop("strategy_pending_delete", None)
+        else:
+            st.warning(f"确定删除战法「{pack['name']}」？此操作不可撤销。")
+            confirm_col, cancel_col, _ = st.columns([1, 1, 2])
+            if confirm_col.button(
+                "确认删除",
+                key="strategy_confirm_delete",
+                type="primary",
+                use_container_width=True,
+            ):
+                new_cfg = delete_strategy_pack(cfg, pending)
+                st.session_state["team_config"] = _persist(new_cfg)
+                _clear_strategy_keys()
+                _notice(f"战法「{pack['name']}」已删除。")
+                st.rerun()
+            if cancel_col.button(
+                "取消",
+                key="strategy_cancel_delete",
+                use_container_width=True,
+            ):
+                st.session_state.pop("strategy_pending_delete", None)
+                st.rerun()
+
+    if not packs:
+        st.info(
+            "还没有战法。可以在下面新建一条，例如「RSI 超买 + MACD 死叉 → 超级空头」。",
+            icon="💡",
+        )
+
+    for pack in packs:
+        status = "✅ 启用" if pack.get("enabled") else "⏸️ 停用"
+        label = f"{status} · {pack['name']} · {_strategy_scope_label(pack.get('scope') or [])}"
+        with st.expander(label, expanded=False):
+            _render_strategy_pack_form(cfg, pack, is_new=False)
+
+    if len(packs) >= MAX_STRATEGY_PACKS:
+        st.caption(f"已达到 {MAX_STRATEGY_PACKS} 条上限；删除旧战法后才能新增。")
+    else:
+        with st.expander("➕ 新建战法", expanded=not packs):
+            _render_strategy_pack_form(cfg, _new_strategy_draft(), is_new=True)
+
+    st.caption(
+        "战法优先级高于内置框架；如果与内置规则冲突，模型应优先执行你的战法。"
+        " 但 LLM 不保证 100% 执行确定性规则——需要硬性判定的规则，后续应做成代码级规则引擎。"
+    )
+
+
 # ── 状态 / 拓扑 ─────────────────────────────────────────────────────────────
 
 
@@ -329,6 +556,7 @@ def _role_card(
     role: str,
     states: dict[str, str],
     overrides: dict[str, Any],
+    strategy_packs: list[dict[str, Any]],
     *,
     has_error: bool,
 ) -> None:
@@ -352,6 +580,9 @@ def _role_card(
         st.markdown(_status_html(status, has_error=has_error), unsafe_allow_html=True)
         if is_role_customized(role, overrides):
             st.caption("✏️ 已自定义")
+        strategy_count = len(active_strategy_packs(role, strategy_packs))
+        if strategy_count:
+            st.caption(f"🎯 {strategy_count} 条战法")
 
 
 def _flow(label: str = "") -> None:
@@ -375,6 +606,7 @@ def _group_header(group: str) -> None:
 def _render_topology(
     states: dict[str, str],
     overrides: dict[str, Any],
+    strategy_packs: list[dict[str, Any]],
     *,
     has_error: bool,
 ) -> None:
@@ -382,14 +614,18 @@ def _render_topology(
     cols = st.columns(len(ANALYST_ROLES))
     for col, role in zip(cols, ANALYST_ROLES):
         with col:
-            _role_card(role, states, overrides, has_error=has_error)
+            _role_card(
+                role, states, overrides, strategy_packs, has_error=has_error
+            )
 
     _flow("7 份报告")
 
     _group_header("quality")
     left, middle, right = st.columns([2, 1, 2])
     with middle:
-        _role_card("quality_gate", states, overrides, has_error=has_error)
+        _role_card(
+            "quality_gate", states, overrides, strategy_packs, has_error=has_error
+        )
 
     _flow("质量结论")
 
@@ -397,14 +633,18 @@ def _render_topology(
     cols = st.columns(3)
     for col, role in zip(cols, ("bull", "bear", "research_manager")):
         with col:
-            _role_card(role, states, overrides, has_error=has_error)
+            _role_card(
+                role, states, overrides, strategy_packs, has_error=has_error
+            )
 
     _flow("投资计划")
 
     _group_header("decision")
     left, middle, right = st.columns([2, 1, 2])
     with middle:
-        _role_card("trader", states, overrides, has_error=has_error)
+        _role_card(
+            "trader", states, overrides, strategy_packs, has_error=has_error
+        )
 
     _flow("交易方案")
 
@@ -415,11 +655,15 @@ def _render_topology(
         ("risk_aggressive", "risk_conservative", "risk_neutral"),
     ):
         with col:
-            _role_card(role, states, overrides, has_error=has_error)
+            _role_card(
+                role, states, overrides, strategy_packs, has_error=has_error
+            )
     _flow("三方辩论")
     left, middle, right = st.columns([2, 1, 2])
     with middle:
-        _role_card("portfolio_manager", states, overrides, has_error=has_error)
+        _role_card(
+            "portfolio_manager", states, overrides, strategy_packs, has_error=has_error
+        )
 
 
 # ── 提示词编辑器 ────────────────────────────────────────────────────────────
@@ -526,6 +770,11 @@ def _render_editor(cfg: dict[str, Any], states: dict[str, str]) -> None:
             f"输出字段 `{spec.output_key}` · "
             f"{'深度模型' if spec.model_tier == 'deep' else '快速模型'}"
         )
+        active_packs = active_strategy_packs(role, cfg["strategy_packs"])
+        if active_packs:
+            st.caption("🎯 生效战法：" + "、".join(p["name"] for p in active_packs))
+        else:
+            st.caption("🎯 无生效战法（可在上方「我的战法」里新建）")
 
     tab_edit, tab_preview, tab_detail = st.tabs(
         ["✏️ 编辑提示词", "👁️ 完整提示词预览", "ℹ️ 角色详情"]
@@ -593,6 +842,7 @@ def _render_editor(cfg: dict[str, Any], states: dict[str, str]) -> None:
             # Web 端的 _build_config() 固定 output_language=Chinese；预览与之一致。
             language_instruction=" Write your entire response in Chinese.",
             selected_analysts=cfg["selected_analysts"],
+            strategy_packs=cfg["strategy_packs"],
         )
         for label, text in preview:
             st.markdown(f"**{label}** · `{len(text):,}` 字")
@@ -618,6 +868,12 @@ def _render_editor(cfg: dict[str, Any], states: dict[str, str]) -> None:
         st.markdown(
             f"- **提示词长度**：内置 {default_len:,} 字 → 当前 {effective_len:,} 字"
         )
+        strategy_len = sum(
+            len(pack["content"])
+            for pack in active_strategy_packs(role, cfg["strategy_packs"])
+        )
+        if strategy_len:
+            st.markdown(f"- **我的战法**：{strategy_len:,} 字")
 
         if spec.tools:
             st.markdown("**可用工具**")
@@ -637,6 +893,14 @@ def _render_editor(cfg: dict[str, Any], states: dict[str, str]) -> None:
             st.markdown("**已覆盖的片段**：" + "、".join(custom))
         else:
             st.caption("当前全部使用内置提示词。")
+
+        active_packs = active_strategy_packs(role, cfg["strategy_packs"])
+        if active_packs:
+            st.markdown("**生效中的「我的战法」**")
+            for pack in active_packs:
+                st.markdown(f"- 🎯 {pack['name']}")
+        else:
+            st.caption("当前没有作用于该角色的「我的战法」。")
 
 
 # ── 页面主体 ────────────────────────────────────────────────────────────────
@@ -663,18 +927,27 @@ def render_team_view() -> None:
                 16 位 Agent 的完整流水线：7 位工具型分析师各自动取数写报告 →
                 质量门控复审 → 多空辩论 → 研究经理收敛 → 交易员落地 →
                 激进 / 保守 / 中性三方风控 → 组合经理最终决策。
-                这里既能看团队现在跑到哪一步，也能直接改每个角色的提示词。
+                这里既能看团队现在跑到哪一步，也能直接改每个角色的提示词，
+                或给团队注入你自己的「战法」。
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    m1, m2, m3, m4 = st.columns(4)
+    enabled_strategy = sum(
+        1 for pack in cfg["strategy_packs"] if pack.get("enabled")
+    )
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("团队角色", len(ROLE_SPECS))
     m2.metric("已自定义提示词", len(custom_roles))
-    m3.metric("参与分析", f"{len(cfg['selected_analysts'])} / {len(ANALYST_ROLES)}")
-    m4.metric(
+    m3.metric(
+        "我的战法",
+        f"{enabled_strategy} / {len(cfg['strategy_packs'])}",
+        help="启用中的战法 / 全部战法",
+    )
+    m4.metric("参与分析", f"{len(cfg['selected_analysts'])} / {len(ANALYST_ROLES)}")
+    m5.metric(
         "辩论轮数",
         f"{cfg['max_debate_rounds']} / {cfg['max_risk_rounds']}",
         help="多空辩论轮数 / 风险辩论轮数",
@@ -769,8 +1042,17 @@ def render_team_view() -> None:
             on_click=_reset_options_cb,
         )
 
+    # ── 我的战法 ────────────────────────────────────────────────────────────
+    st.markdown("---")
+    _render_strategy_library(cfg)
+
     # ── 拓扑 ────────────────────────────────────────────────────────────────
-    _render_topology(states, cfg["prompts"], has_error=has_error)
+    _render_topology(
+        states,
+        cfg["prompts"],
+        cfg["strategy_packs"],
+        has_error=has_error,
+    )
 
     # ── 编辑器 ──────────────────────────────────────────────────────────────
     _render_editor(cfg, states)
@@ -778,7 +1060,7 @@ def render_team_view() -> None:
     # ── 导入 / 导出 ─────────────────────────────────────────────────────────
     with st.expander("📦 导入 / 导出团队配置", expanded=False):
         st.caption(
-            "导出的 JSON 含提示词、参与的分析师和辩论轮数；换机器/备份时可直接导入。"
+            "导出的 JSON 含提示词、我的战法、参与的分析师和辩论轮数；换机器/备份时可直接导入。"
         )
         st.download_button(
             "⬇️ 导出 team_config.json",
@@ -791,7 +1073,7 @@ def render_team_view() -> None:
             "导入团队配置 JSON",
             type=["json"],
             key="team_import_file",
-            help="导入后会覆盖当前的提示词与团队编排，并清空编辑器草稿。",
+            help="导入后会覆盖当前的提示词、我的战法、团队编排，并清空编辑器草稿。",
         )
         if uploaded is not None and uploaded.name != st.session_state.get(
             "team_last_import"
@@ -801,6 +1083,7 @@ def render_team_view() -> None:
                 imported = normalize_team_config(raw)
                 st.session_state["team_config"] = _persist(imported)
                 _clear_editor_keys()
+                _clear_strategy_keys()
                 st.session_state["team_last_import"] = uploaded.name
                 _notice(f"已导入 {uploaded.name}。")
                 st.rerun()

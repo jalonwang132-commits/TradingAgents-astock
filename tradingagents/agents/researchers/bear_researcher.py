@@ -21,6 +21,8 @@ def create_bear_researcher(llm, prompt_override=None):
 
         prompt = build_bear_prompt(
             {
+                "ticker": state.get("company_of_interest", ""),
+                "date": state.get("trade_date", ""),
                 "market_report": market_research_report,
                 "sentiment_report": sentiment_report,
                 "news_report": news_report,

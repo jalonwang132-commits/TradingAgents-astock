@@ -14,12 +14,14 @@ import copy
 import json
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
 from tradingagents.agents.prompt_registry import (
     ANALYST_ROLES,
     DEFAULT_SELECTED_ANALYSTS,
+    ROLE_ORDER,
     ROLE_SPECS,
     get_default_prompt,
 )
@@ -35,12 +37,17 @@ DEFAULT_MAX_DEBATE_ROUNDS = 1
 DEFAULT_MAX_RISK_ROUNDS = 1
 _MAX_ROUNDS = 5
 
+# 策略包（「我的战法」）的默认值。scope 为空列表 = 应用于全部角色。
+DEFAULT_STRATEGY_NAME = "未命名战法"
+MAX_STRATEGY_PACKS = 30
+
 
 def default_team_config() -> dict[str, Any]:
     """全新用户的团队配置。"""
     return {
         "version": TEAM_CONFIG_VERSION,
         "prompts": {},
+        "strategy_packs": [],
         "selected_analysts": list(DEFAULT_SELECTED_ANALYSTS),
         "max_debate_rounds": DEFAULT_MAX_DEBATE_ROUNDS,
         "max_risk_rounds": DEFAULT_MAX_RISK_ROUNDS,
@@ -88,6 +95,51 @@ def _normalize_prompts(value: Any) -> dict[str, dict[str, str]]:
     return cleaned
 
 
+def _new_strategy_id() -> str:
+    return f"sp_{uuid.uuid4().hex[:10]}"
+
+
+def _normalize_scope(value: Any) -> list[str]:
+    """作用角色；空列表表示全部角色。保持 ROLE_ORDER 的固定顺序。"""
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    chosen = {str(item) for item in value}
+    return [role for role in ROLE_ORDER if role in chosen]
+
+
+def _normalize_strategy_packs(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    packs: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(value):
+        if not isinstance(raw, Mapping):
+            continue
+        content = raw.get("content")
+        content = content.strip() if isinstance(content, str) else ""
+        if not content:
+            # 空战法没有意义，也避免页面出现无法删除的空卡片。
+            continue
+        pack_id = str(raw.get("id") or "").strip()
+        if not pack_id or pack_id in seen_ids:
+            pack_id = f"sp_{index}_{uuid.uuid4().hex[:6]}"
+        seen_ids.add(pack_id)
+        name = raw.get("name")
+        name = str(name).strip() if name is not None else ""
+        packs.append(
+            {
+                "id": pack_id,
+                "name": name or DEFAULT_STRATEGY_NAME,
+                "scope": _normalize_scope(raw.get("scope")),
+                "content": content,
+                "enabled": bool(raw.get("enabled", True)),
+            }
+        )
+        if len(packs) >= MAX_STRATEGY_PACKS:
+            break
+    return packs
+
+
 def normalize_team_config(raw: Any) -> dict[str, Any]:
     """把磁盘/导入的任意 dict 校验成页面能安全消费的形状。"""
     cfg = default_team_config()
@@ -95,6 +147,7 @@ def normalize_team_config(raw: Any) -> dict[str, Any]:
         return cfg
 
     cfg["prompts"] = _normalize_prompts(raw.get("prompts"))
+    cfg["strategy_packs"] = _normalize_strategy_packs(raw.get("strategy_packs"))
     cfg["selected_analysts"] = _normalize_analysts(raw.get("selected_analysts"))
     cfg["max_debate_rounds"] = _clamp_rounds(
         raw.get("max_debate_rounds"), DEFAULT_MAX_DEBATE_ROUNDS
@@ -154,6 +207,9 @@ def apply_team_config_to_run_config(
     只改这几个键，其余运行配置（模型、缓存目录、订阅覆盖……）原样保留。
     """
     run_config["agent_prompts"] = build_agent_prompts(team_config)
+    run_config["strategy_packs"] = [
+        dict(pack) for pack in team_config.get("strategy_packs") or []
+    ]
     run_config["selected_analysts"] = list(
         team_config.get("selected_analysts") or DEFAULT_SELECTED_ANALYSTS
     )
@@ -233,3 +289,93 @@ def set_team_options(
             max_risk_rounds, DEFAULT_MAX_RISK_ROUNDS
         )
     return cfg
+
+
+# ── 「我的战法」策略包 ──────────────────────────────────────────────────────
+
+
+def get_strategy_pack(
+    team_config: Mapping[str, Any], pack_id: str
+) -> dict[str, Any] | None:
+    for pack in team_config.get("strategy_packs") or []:
+        if pack.get("id") == pack_id:
+            return dict(pack)
+    return None
+
+
+def add_strategy_pack(
+    team_config: Mapping[str, Any],
+    *,
+    name: str,
+    scope: list[str] | None,
+    content: str,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """新增一个策略包；内容为空时不做任何事（页面也会先校验）。"""
+    cfg = normalize_team_config(team_config)
+    text = (content or "").strip()
+    if not text:
+        return cfg
+    packs = list(cfg.get("strategy_packs") or [])
+    if len(packs) >= MAX_STRATEGY_PACKS:
+        return cfg
+    packs.append(
+        {
+            "id": _new_strategy_id(),
+            "name": (name or "").strip() or DEFAULT_STRATEGY_NAME,
+            "scope": _normalize_scope(scope),
+            "content": text,
+            "enabled": bool(enabled),
+        }
+    )
+    cfg["strategy_packs"] = packs
+    return cfg
+
+
+def update_strategy_pack(
+    team_config: Mapping[str, Any],
+    pack_id: str,
+    *,
+    name: str | None = None,
+    scope: list[str] | None = None,
+    content: str | None = None,
+    enabled: bool | None = None,
+) -> dict[str, Any]:
+    cfg = normalize_team_config(team_config)
+    packs = []
+    for pack in cfg.get("strategy_packs") or []:
+        if pack.get("id") != pack_id:
+            packs.append(pack)
+            continue
+        updated = dict(pack)
+        if name is not None:
+            updated["name"] = (name or "").strip() or DEFAULT_STRATEGY_NAME
+        if scope is not None:
+            updated["scope"] = _normalize_scope(scope)
+        if content is not None:
+            updated["content"] = (content or "").strip()
+        if enabled is not None:
+            updated["enabled"] = bool(enabled)
+        # 更新后内容为空 = 删除该策略包，避免留下空壳。
+        if updated.get("content"):
+            packs.append(updated)
+    cfg["strategy_packs"] = packs
+    return cfg
+
+
+def delete_strategy_pack(
+    team_config: Mapping[str, Any], pack_id: str
+) -> dict[str, Any]:
+    cfg = normalize_team_config(team_config)
+    cfg["strategy_packs"] = [
+        pack
+        for pack in cfg.get("strategy_packs") or []
+        if pack.get("id") != pack_id
+    ]
+    return cfg
+
+
+def set_strategy_pack_enabled(
+    team_config: Mapping[str, Any], pack_id: str, enabled: bool
+) -> dict[str, Any]:
+    return update_strategy_pack(team_config, pack_id, enabled=enabled)

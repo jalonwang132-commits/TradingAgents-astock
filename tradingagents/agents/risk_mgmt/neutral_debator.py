@@ -23,6 +23,8 @@ def create_neutral_debator(llm, prompt_override=None):
         prompt = build_risk_prompt(
             "risk_neutral",
             {
+                "ticker": state.get("company_of_interest", ""),
+                "date": state.get("trade_date", ""),
                 "trader_decision": trader_decision,
                 "market_report": market_research_report,
                 "sentiment_report": sentiment_report,

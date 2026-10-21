@@ -65,6 +65,10 @@ DEFAULT_CONFIG = {
     # 其余片段继续用 tradingagents/agents/prompt_defaults.py 的默认值。
     # Web「投研团队」页编辑后写入这里；CLI / 脚本也可以直接传这份 dict。
     "agent_prompts": {},
+    # 「我的战法」策略包：在基础提示词之后、运行时数据之前追加的个性化规则。
+    # 形状：[{"id": ..., "name": ..., "scope": [role...], "content": ..., "enabled": true}]。
+    # scope 为空 = 应用于全部角色。Web 团队页负责读写，agent 通过 prompt_builder 合并。
+    "strategy_packs": [],
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"

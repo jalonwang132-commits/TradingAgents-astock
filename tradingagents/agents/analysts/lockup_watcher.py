@@ -30,6 +30,7 @@ def create_lockup_watcher(llm, prompt_override=None):
             [tool.name for tool in tools],
             current_date,
             instrument_context,
+            ticker=state["company_of_interest"],
         )
 
         prompt = ChatPromptTemplate.from_messages(

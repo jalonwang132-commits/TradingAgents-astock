@@ -21,11 +21,17 @@ Breaking changes within the 0.x line are called out explicitly.
   支持单角色恢复默认、全部恢复默认、导入 / 导出 JSON。
 - 新增「团队编排」：选择本次参与的分析师（至少 1 位）、多空辩论轮数 1-5、
   风险辩论轮数 1-5。
+- 新增「🎯 我的战法」策略库：独立于基础提示词的个性化策略包，支持名称、
+  作用角色、启用/停用、保存到 `~/.tradingagents/team_config.json`；战法追加到
+  对应角色提示词末尾，角色卡显示生效条数，合并后的完整提示词可在预览里查看。
+  策略包支持 `{ticker}` / `{date}` 等变量，按角色生效（scope 为空 = 全部角色）。
+  新增 `config["strategy_packs"]`。
 - 提示词默认文案集中到 `tradingagents/agents/prompt_defaults.py`，页面、agent、
   预览共用同一份；新增 `config["agent_prompts"]` 与 `config["selected_analysts"]`。
   新增 agent / 改提示词结构时只需改 defaults + registry + builder。
 - 回归测试：`tests/test_prompt_registry.py`、`tests/test_prompt_override_flow.py`、
-  `tests/test_team_store.py`、`tests/test_team_state.py`。
+  `tests/test_team_store.py`、`tests/test_team_state.py`、
+  `tests/test_strategy_packs.py`。
 
 ## [0.5.21] — 2026-10-11
 

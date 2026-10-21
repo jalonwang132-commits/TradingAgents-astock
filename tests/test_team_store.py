@@ -31,6 +31,7 @@ def test_default_config_is_safe():
     cfg = default_team_config()
     assert cfg["version"] == 1
     assert cfg["prompts"] == {}
+    assert cfg["strategy_packs"] == []
     assert cfg["selected_analysts"] == list(ANALYST_ROLES)
     assert cfg["max_debate_rounds"] == DEFAULT_MAX_DEBATE_ROUNDS
     assert cfg["max_risk_rounds"] == DEFAULT_MAX_RISK_ROUNDS

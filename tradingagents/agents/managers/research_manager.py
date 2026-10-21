@@ -18,13 +18,15 @@ def create_research_manager(llm, prompt_override=None):
     structured_llm = bind_structured(llm, ResearchPlan, "Research Manager")
 
     def research_manager_node(state) -> dict:
-        instrument_context = build_instrument_context(state["company_of_interest"])
+        instrument_context = build_instrument_context(state.get("company_of_interest", ""))
         history = state["investment_debate_state"].get("history", "")
 
         investment_debate_state = state["investment_debate_state"]
 
         prompt = build_research_manager_prompt(
             {
+                "ticker": state.get("company_of_interest", ""),
+                "date": state.get("trade_date", ""),
                 "instrument_context": instrument_context,
                 "history": history,
                 "language_instruction": get_language_instruction(),

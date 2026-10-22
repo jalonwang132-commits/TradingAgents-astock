@@ -1,4 +1,4 @@
-"""Launch the TradingAgents web UI via `tradingagents-web` command."""
+"""Launch the Jalon A股投研工作台 Web UI via `jalon-web` command."""
 
 from __future__ import annotations
 

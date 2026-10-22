@@ -30,12 +30,13 @@ from cli.models import AnalystType
 from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
+from web.branding import APP_NAME, AUTHOR, AUTHOR_URL, REPO_URL
 
 console = Console()
 
 app = typer.Typer(
-    name="TradingAgents",
-    help="TradingAgents CLI: Multi-Agents LLM Financial Trading Framework",
+    name="Jalon",
+    help=f"{APP_NAME} CLI: 多 Agent A 股投研框架",
     add_completion=True,  # Enable shell completion
 )
 
@@ -257,9 +258,9 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     # Header with welcome message
     layout["header"].update(
         Panel(
-            "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
-            "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
-            title="Welcome to TradingAgents",
+            f"[bold green]欢迎使用 {APP_NAME}[/bold green]\n"
+            f"[dim][link={AUTHOR_URL}]{AUTHOR}[/link] · {REPO_URL}[/dim]",
+            title=f"{APP_NAME} · CLI",
             border_style="green",
             padding=(1, 2),
             expand=True,
@@ -468,11 +469,11 @@ def get_user_selections():
 
     # Create welcome box content
     welcome_content = f"{welcome_ascii}\n"
-    welcome_content += "[bold green]TradingAgents: Multi-Agents LLM Financial Trading Framework - CLI[/bold green]\n\n"
-    welcome_content += "[bold]Workflow Steps:[/bold]\n"
-    welcome_content += "I. Analyst Team → II. Research Team → III. Trader → IV. Risk Management → V. Portfolio Management\n\n"
+    welcome_content += f"[bold green]{APP_NAME} · 多 Agent A股投研 CLI[/bold green]\n\n"
+    welcome_content += "[bold]分析流程：[/bold]\n"
+    welcome_content += "I. 分析师团队 → II. 多空研究 → III. 交易员 → IV. 风控辩论 → V. 组合决策\n\n"
     welcome_content += (
-        "[dim]Built by [Tauric Research](https://github.com/TauricResearch)[/dim]"
+        f"[dim][link={REPO_URL}]{REPO_URL}[/link][/dim]"
     )
 
     # Create and center the welcome box
@@ -480,8 +481,8 @@ def get_user_selections():
         welcome_content,
         border_style="green",
         padding=(1, 2),
-        title="Welcome to TradingAgents",
-        subtitle="Multi-Agents LLM Financial Trading Framework",
+        title=f"欢迎使用 {APP_NAME}",
+        subtitle="多 Agent A股投研工作台",
     )
     console.print(Align.center(welcome_box))
     console.print()

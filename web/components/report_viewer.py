@@ -12,6 +12,7 @@ from tradingagents.dataflows.missing_data import (
     get_missing_tasks,
     retry_missing_tasks,
 )
+from web.branding import FILE_PREFIX
 from web.pdf_export import generate_markdown, generate_pdf
 from web.stock_display import normalize_stock_mentions, stock_display_label
 
@@ -217,7 +218,7 @@ def render_report(
         st.download_button(
             "📥 下载 Markdown",
             data=md_text.encode("utf-8"),
-            file_name=f"TradingAgents-Astock_{_safe_filename_label(ticker_label)}_{trade_date}.md",
+            file_name=f"{FILE_PREFIX}_{_safe_filename_label(ticker_label)}_{trade_date}.md",
             mime="text/markdown",
             use_container_width=True,
         )
@@ -227,7 +228,7 @@ def render_report(
             st.download_button(
                 "📄 下载 PDF",
                 data=pdf_bytes,
-                file_name=f"TradingAgents-Astock_{_safe_filename_label(ticker_label)}_{trade_date}.pdf",
+                file_name=f"{FILE_PREFIX}_{_safe_filename_label(ticker_label)}_{trade_date}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             )

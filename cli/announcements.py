@@ -12,6 +12,10 @@ def fetch_announcements(url: str = None, timeout: float = None) -> dict:
     timeout = timeout or CLI_CONFIG["announcements_timeout"]
     fallback = CLI_CONFIG["announcements_fallback"]
 
+    # 不配置公告地址时直接跳过，不发任何请求（本仓库默认就是这种情况）。
+    if not endpoint:
+        return {"announcements": [], "require_attention": False}
+
     try:
         response = requests.get(endpoint, timeout=timeout)
         response.raise_for_status()

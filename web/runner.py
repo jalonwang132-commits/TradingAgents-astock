@@ -1,4 +1,4 @@
-"""Background thread runner for TradingAgentsGraph pipeline."""
+"""Background thread runner for the multi-agent research pipeline."""
 
 from __future__ import annotations
 

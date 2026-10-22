@@ -51,7 +51,7 @@ TICKERS = {
 
 
 def build_config() -> dict:
-    """Build the TradingAgents config for case runs.
+    """Build the pipeline config for case runs.
 
     默认用 MiniMax；换成你自己的 provider/model 时改 llm_provider 与两个 *_llm 即可。
     """

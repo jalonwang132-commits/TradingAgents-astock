@@ -13,6 +13,14 @@ import streamlit as st
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.checkpointer import clear_checkpoint
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
+from web.branding import (
+    APP_MARK_LEFT,
+    APP_MARK_RIGHT,
+    APP_TAGLINE,
+    AUTHOR,
+    AUTHOR_URL,
+    VERSION,
+)
 from web.history import (
     clear_incomplete_task,
     get_history,
@@ -396,14 +404,15 @@ def render_sidebar() -> None:
         st.rerun()
 
     st.markdown(
-        """
+        f"""
         <div style="text-align:center; margin-bottom:1.5rem;">
-            <span style="font-size:2rem; font-weight:800; color:#ff5a1f;">Trading</span><span style="font-size:2rem; font-weight:800; color:#f5f1eb;">Agents</span><span style="font-size:2rem; font-weight:800; color:#f5f1eb;">-</span><span style="font-size:2rem; font-weight:800; color:#ff5a1f;">Astock</span>
+            <span style="font-size:2rem; font-weight:800; color:#ff5a1f;">{APP_MARK_LEFT}</span>&nbsp;<span style="font-size:2rem; font-weight:800; color:#f5f1eb;">{APP_MARK_RIGHT}</span>
             <div style="font-size:0.85rem; color:#888; margin-top:0.2rem;">
-                A股多Agent投研系统
+                {APP_TAGLINE}
             </div>
             <div style="font-size:0.7rem; color:#555; margin-top:0.3rem;">
-                by <a href="https://github.com/simonlin1212" style="color:#ff5a1f; text-decoration:none;">simonlin1212</a>
+                by <a href="{AUTHOR_URL}" style="color:#ff5a1f; text-decoration:none;">{AUTHOR}</a>
+                · v{VERSION}
             </div>
         </div>
         """,

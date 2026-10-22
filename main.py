@@ -1,8 +1,8 @@
-"""最小可运行示例 —— 就是 README「快速开始 · 3. 运行分析」里的那段代码。
+"""最小可运行示例 —— 对应 README「10. 启动 CLI」里的那段代码。
 
 `config` 是传给 TradingAgentsGraph 的**覆盖项**字典，不是配置文件：
 只写要改的键，其余取 tradingagents/default_config.py 的默认值（#101）。
-API key 走 .env（见 README 第 2 步）。运行：uv run python main.py
+API key 走 .env（见 README「7. 配置模型」）。运行：python main.py
 """
 from dotenv import load_dotenv
 

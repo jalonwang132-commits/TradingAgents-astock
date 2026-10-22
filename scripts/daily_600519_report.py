@@ -32,6 +32,7 @@ load_dotenv(ROOT / ".env")
 from tradingagents.default_config import DEFAULT_CONFIG  # noqa: E402
 from tradingagents.graph.trading_graph import TradingAgentsGraph  # noqa: E402
 from cli.main import save_report_to_disk  # noqa: E402
+from web.branding import APP_NAME  # noqa: E402
 
 TICKER = "600519"
 STOCK_NAME = "贵州茅台"
@@ -90,7 +91,7 @@ def build_report(final_state: dict, decision: str, trade_date: str, run_time: st
     parts = [
         f"# {STOCK_NAME}（{TICKER}）研究报告",
         f"> 分析日期：{trade_date}　|　生成时间：{run_time}　|　"
-        f"生成方式：TradingAgents-Astock 多智能体流水线（7 分析师 → 多空辩论 → 交易 → 三方风控 → 组合决策）",
+        f"生成方式：{APP_NAME} 多智能体流水线（7 分析师 → 多空辩论 → 交易 → 三方风控 → 组合决策）",
         "",
         "> ⚠️ 本报告由 AI 自动生成，仅供研究与学习，不构成任何投资建议。",
         "",

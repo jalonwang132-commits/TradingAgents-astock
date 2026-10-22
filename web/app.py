@@ -1,4 +1,4 @@
-"""TradingAgents A股分析 — Streamlit Web UI."""
+"""Jalon A股投研工作台 — Streamlit Web UI."""
 
 from __future__ import annotations
 
@@ -20,6 +20,12 @@ load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 from tradingagents.default_config import DEFAULT_CONFIG  # noqa: E402
 
+from web.branding import (  # noqa: E402
+    APP_DESCRIPTION,
+    APP_MARK_LEFT,
+    APP_MARK_RIGHT,
+    APP_NAME,
+)
 from web.components.progress_panel import render_progress  # noqa: E402
 from web.components.report_viewer import render_report  # noqa: E402
 from web.components.sidebar import render_sidebar, validate_model_selection  # noqa: E402
@@ -35,7 +41,7 @@ from web.team_store import (  # noqa: E402
 # ── Page config ──────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="TradingAgents-Astock A股分析",
+    page_title=APP_NAME,
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -46,7 +52,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+    /* 不加载 Google Fonts：本地优先，国内网络也不会因为字体请求卡住首屏。 */
 
     /* Hide Streamlit chrome for clean video recording.
        IMPORTANT: do NOT `display:none` the whole header OR the whole toolbar.
@@ -78,7 +84,9 @@ st.markdown(
     }
 
     html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+            "Noto Sans CJK SC", sans-serif;
     }
     .stApp {
         background: #0a0a0a;
@@ -305,7 +313,7 @@ elif tracker and tracker.error:
 # State 0: Idle — welcome screen
 else:
     st.markdown(
-        """
+        f"""
         <div style="
             display: flex;
             flex-direction: column;
@@ -320,11 +328,11 @@ else:
                 font-weight: 900;
                 margin-bottom: 0.5rem;
             ">
-                <span style="color: #ff5a1f;">Trading</span><span style="color: #f5f1eb;">Agents</span><span style="color: #f5f1eb;">-</span><span style="color: #ff5a1f;">Astock</span>
+                <span style="color: #ff5a1f;">{APP_MARK_LEFT}</span>&nbsp;<span style="color: #f5f1eb;">{APP_MARK_RIGHT}</span>
             </div>
             <div style="color: #888; font-size: 1.1rem; max-width: 500px; line-height: 1.6;">
-                A股多Agent投研分析系统<br>
-                7位AI分析师 → 质量门控 → 多空辩论 → 风控评估 → 最终决策
+                多 Agent A股投研工作台<br>
+                {APP_DESCRIPTION}
             </div>
             <div style="
                 margin-top: 2rem;
@@ -345,8 +353,8 @@ else:
                 line-height: 1.6;
                 border-top: 1px solid #1a1a1a;
             ">
-                ⚠️ 本项目仅供学习研究与技术演示，不构成任何投资建议。<br>
-                投资决策请咨询持牌专业机构。作者不对使用本工具产生的任何损失承担责任。
+                ⚠️ 本工具仅供学习研究与技术演示，不构成任何投资建议。<br>
+                投资决策请咨询持牌专业机构。使用本工具产生的任何损失由使用者自行承担。
             </div>
         </div>
         """,

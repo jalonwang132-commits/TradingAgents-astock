@@ -1,12 +1,14 @@
-# TradingAgents-Astock
+# Jalon A股投研工作台
 
 ## 项目概述
-基于 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)（65K Stars）的 A 股深度特化 fork。多 Agent 投研框架，7 个 Analyst 角色通过 Bull/Bear 辩论 + 三方风险辩论生成投资报告。
+个人自用、本地部署的 A 股多 Agent 投研工作台。7 个 Analyst 角色通过 Bull/Bear 辩论 +
+三方风险辩论生成中文投资报告，数据全部来自免费公开行情接口，模型和 API Key 都由使用者
+自己配置。
 
-- **仓库**: https://github.com/simonlin1212/TradingAgents-astock
-- **协议**: Apache 2.0
-- **Python**: >=3.10
-- **当前版本**: 0.5.22（2026-10-20）
+- **仓库**: https://github.com/jalonwang132-commits/TradingAgents-astock
+- **协议**: Apache 2.0（原始版权归属见 `NOTICE`）
+- **Python**: >=3.10（推荐 3.12/3.13）
+- **当前版本**: 0.6.0（2026-10-22）
   ⚠️ 改版本号时**三处要一起改**：`pyproject.toml` / `CHANGELOG.md` / 这一行。漏了这行会让后续 agent 和发版流程读到旧版本（`tests/test_version_consistency.py` 会拦）。
 
 ## 架构
@@ -25,7 +27,7 @@
 | 百度股市通 | HTTP (gushitong.baidu) | 概念板块归属（资金流已迁移至东财push2） |
 
 ### Agent 角色（7 个）
-原版 4 个（市场/情绪/新闻/基本面）+ A 股特化 3 个（政策分析师/游资追踪/解禁监控）
+通用 4 个（市场/情绪/新闻/基本面）+ A 股特化 3 个（政策分析师/游资追踪/解禁监控）
 
 ### 关键路径
 - `tradingagents/dataflows/a_stock.py` — A 股数据 vendor，所有数据获取入口
@@ -181,17 +183,14 @@ provider —— 正是启用订阅要避免的事。`_timeout_for` 收的轮数�
 超时抛 `_SDKTimeout`，在 `_FALLBACK_ERRORS` 里（认证失败仍然不在，见该元组注释）。
 
 ### 待处理 PR
-- PR #18（hejingchi）：start_date 功能 + 主题切换 + Windows 字体。不建议直接 merge（与 v0.2.6 冲突），start_date 功能值得后续自行实现。
+- 无。后续改动直接在本仓库进行。
 
-## Issue 归档
-所有 GitHub Issue 的详细记录在 `issues/` 文件夹中，包含问题描述、根因分析、修复方案和当前状态。
+## 历史问题归档
+`issues/` 文件夹保留了开发过程中的问题描述、根因分析与修复方案，供排查同类问题时参考。
 
 ## 开发规范
 - 改动前先跑 `python -m pytest tests/ -v` 确保不破坏现有测试
 - `safe_ticker_component` 是安全边界，任何绕过路径校验的改动必须慎重评估
 - 数据层新增接口遵循 `tradingagents/dataflows/interface.py` 的 vendor 路由模式
-- Web UI 改动在 `web/` 目录，用 `streamlit run web/launch.py` 本地测试
-
-## 相关项目
-- [a-stock-data](https://github.com/simonlin1212/a-stock-data) — A 股 MCP 数据服务（Claude Code 用的 skill）
-- 上游 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) — 原版框架
+- Web UI 改动在 `web/` 目录，用 `streamlit run web/app.py` 本地测试
+- 品牌相关字符串统一从 `web/branding.py` 取，不要在组件里写死项目名/作者名

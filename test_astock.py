@@ -1,4 +1,4 @@
-"""End-to-end test: run TradingAgents pipeline on A-stock 688017 via Kimi 2.6."""
+"""End-to-end test: run Jalon A股投研工作台 pipeline on A-stock 688017 via Kimi 2.6."""
 
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
@@ -29,7 +29,7 @@ config["max_risk_discuss_rounds"] = 1
 config["output_language"] = "Chinese"
 
 print("=" * 60)
-print("TradingAgents-Astock E2E Test")
+print("Jalon A股投研工作台 E2E Test")
 print("Ticker: 688017")
 print("Trade date: 2026-04-30")
 print("LLM: Kimi 2.6 via Anthropic API")

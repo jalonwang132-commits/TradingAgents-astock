@@ -1,10 +1,24 @@
 # Changelog
 
-All notable changes to TradingAgents are documented here.
+All notable changes to Jalon A股投研工作台 are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
+
+## [0.6.0] — 2026-10-22
+
+### 变更：个人品牌化（Jalon Edition）
+
+- 项目展示名改为「Jalon A股投研工作台」：Web 侧栏、欢迎页、浏览器标题、报告下载
+  文件名、CLI 标题/欢迎横幅全部换成新品牌，不再显示原作者的姓名或仓库链接。
+- 新增 `web/branding.py` 作为品牌唯一来源（应用名、作者、仓库、版本、文件名前缀），
+  以后改名字只改这一个文件。
+- 发行包名改为 `jalon-astock`；新增 `jalon` / `jalon-web` 命令，保留
+  `tradingagents` / `tradingagents-web` 作为兼容入口。
+- CLI 默认不再请求上游公告接口（`api.tauric.ai`），启动过程不产生外联请求。
+- 保留 Apache-2.0 许可与 `NOTICE` 中的原始版权归属；README 面向「个人本地部署」
+  重写，补全环境检查、Python/uv/pip 安装、GitHub/PyPI 镜像、启动与排错步骤。
 
 ## [0.5.22] — 2026-10-20
 

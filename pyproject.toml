@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tradingagents-astock"
-version = "0.5.22"
-description = "A股多Agent投研框架 — 基于 TradingAgents 深度特化"
+name = "jalon-astock"
+version = "0.6.0"
+description = "Jalon A股投研工作台 — 本地部署的多 Agent A股研究框架"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "simonlin1212", email = "simonlin1212@users.noreply.github.com"},
+    {name = "JalonWang", email = "jalonwang132@gmail.com"},
 ]
 dependencies = [
     "langchain-core>=0.3.81",
@@ -48,10 +48,9 @@ dependencies = [
 agentsdk = ["claude-agent-sdk>=0.2.82"]
 
 [project.urls]
-Homepage = "https://github.com/simonlin1212/tradingagents-astock"
-Repository = "https://github.com/simonlin1212/tradingagents-astock"
-Issues = "https://github.com/simonlin1212/tradingagents-astock/issues"
-Upstream = "https://github.com/TauricResearch/TradingAgents"
+Homepage = "https://github.com/jalonwang132-commits/TradingAgents-astock"
+Repository = "https://github.com/jalonwang132-commits/TradingAgents-astock"
+Issues = "https://github.com/jalonwang132-commits/TradingAgents-astock/issues"
 
 # NOTE: there is deliberately no `[google]` extra — see #87.
 #
@@ -72,6 +71,10 @@ Upstream = "https://github.com/TauricResearch/TradingAgents"
 # See README「Gemini / langchain-google-genai」for details.
 
 [project.scripts]
+# 品牌入口
+jalon = "cli.main:app"
+jalon-web = "web.launch:main"
+# 兼容入口（旧文档/脚本仍在用）
 tradingagents = "cli.main:app"
 tradingagents-web = "web.launch:main"
 

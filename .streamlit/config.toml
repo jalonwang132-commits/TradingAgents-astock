@@ -5,3 +5,7 @@ backgroundColor = "#0a0a0a"
 secondaryBackgroundColor = "#0f0f0f"
 textColor = "#f5f1eb"
 font = "sans serif"
+
+[browser]
+# 本地优先：关闭 Streamlit 的使用统计上报。
+gatherUsageStats = false

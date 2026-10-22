@@ -1471,6 +1471,74 @@ wheels = [
 ]
 
 [[package]]
+name = "jalon-astock"
+version = "0.6.0"
+source = { editable = "." }
+dependencies = [
+    { name = "backtrader" },
+    { name = "fpdf2" },
+    { name = "langchain-anthropic" },
+    { name = "langchain-core" },
+    { name = "langchain-experimental" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint-sqlite" },
+    { name = "mootdx" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "parsel" },
+    { name = "python-dotenv" },
+    { name = "pytz" },
+    { name = "questionary" },
+    { name = "redis" },
+    { name = "requests" },
+    { name = "rich" },
+    { name = "setuptools" },
+    { name = "stockstats" },
+    { name = "streamlit", version = "1.65.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "streamlit", version = "1.66.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "tqdm" },
+    { name = "typer" },
+    { name = "typing-extensions" },
+    { name = "yfinance" },
+]
+
+[package.optional-dependencies]
+agentsdk = [
+    { name = "claude-agent-sdk" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "backtrader", specifier = ">=1.9.78.123" },
+    { name = "claude-agent-sdk", marker = "extra == 'agentsdk'", specifier = ">=0.2.82" },
+    { name = "fpdf2", specifier = ">=2.8.6" },
+    { name = "langchain-anthropic", specifier = ">=0.3.15" },
+    { name = "langchain-core", specifier = ">=0.3.81" },
+    { name = "langchain-experimental", specifier = ">=0.3.4" },
+    { name = "langchain-openai", specifier = ">=0.3.23" },
+    { name = "langgraph", specifier = ">=1.0" },
+    { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0.0" },
+    { name = "mootdx", specifier = ">=0.11.7" },
+    { name = "pandas", specifier = ">=2.3.0" },
+    { name = "parsel", specifier = ">=1.10.0" },
+    { name = "python-dotenv", specifier = ">=1.1.0" },
+    { name = "pytz", specifier = ">=2025.2" },
+    { name = "questionary", specifier = ">=2.1.0" },
+    { name = "redis", specifier = ">=6.2.0" },
+    { name = "requests", specifier = ">=2.32.4" },
+    { name = "rich", specifier = ">=14.0.0" },
+    { name = "setuptools", specifier = ">=80.9.0" },
+    { name = "stockstats", specifier = ">=0.6.5" },
+    { name = "streamlit", specifier = ">=1.45.0" },
+    { name = "tqdm", specifier = ">=4.67.1" },
+    { name = "typer", specifier = ">=0.21.0" },
+    { name = "typing-extensions", specifier = ">=4.14.0" },
+    { name = "yfinance", specifier = ">=0.2.63" },
+]
+provides-extras = ["agentsdk"]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -4969,74 +5037,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324da
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/03/921a3d3c75785aca9ebfbfcabfbc3a1be12e2ab5265deb026d55a5a3f83e/tqdm-4.70.1-py3-none-any.whl", hash = "sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73", size = 80199, upload-time = "2026-09-11T07:25:14.599Z" },
 ]
-
-[[package]]
-name = "tradingagents-astock"
-version = "0.5.21"
-source = { editable = "." }
-dependencies = [
-    { name = "backtrader" },
-    { name = "fpdf2" },
-    { name = "langchain-anthropic" },
-    { name = "langchain-core" },
-    { name = "langchain-experimental" },
-    { name = "langchain-openai" },
-    { name = "langgraph" },
-    { name = "langgraph-checkpoint-sqlite" },
-    { name = "mootdx" },
-    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pandas", version = "3.0.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "parsel" },
-    { name = "python-dotenv" },
-    { name = "pytz" },
-    { name = "questionary" },
-    { name = "redis" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "setuptools" },
-    { name = "stockstats" },
-    { name = "streamlit", version = "1.65.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "streamlit", version = "1.66.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "tqdm" },
-    { name = "typer" },
-    { name = "typing-extensions" },
-    { name = "yfinance" },
-]
-
-[package.optional-dependencies]
-agentsdk = [
-    { name = "claude-agent-sdk" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "backtrader", specifier = ">=1.9.78.123" },
-    { name = "claude-agent-sdk", marker = "extra == 'agentsdk'", specifier = ">=0.2.82" },
-    { name = "fpdf2", specifier = ">=2.8.6" },
-    { name = "langchain-anthropic", specifier = ">=0.3.15" },
-    { name = "langchain-core", specifier = ">=0.3.81" },
-    { name = "langchain-experimental", specifier = ">=0.3.4" },
-    { name = "langchain-openai", specifier = ">=0.3.23" },
-    { name = "langgraph", specifier = ">=1.0" },
-    { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0.0" },
-    { name = "mootdx", specifier = ">=0.11.7" },
-    { name = "pandas", specifier = ">=2.3.0" },
-    { name = "parsel", specifier = ">=1.10.0" },
-    { name = "python-dotenv", specifier = ">=1.1.0" },
-    { name = "pytz", specifier = ">=2025.2" },
-    { name = "questionary", specifier = ">=2.1.0" },
-    { name = "redis", specifier = ">=6.2.0" },
-    { name = "requests", specifier = ">=2.32.4" },
-    { name = "rich", specifier = ">=14.0.0" },
-    { name = "setuptools", specifier = ">=80.9.0" },
-    { name = "stockstats", specifier = ">=0.6.5" },
-    { name = "streamlit", specifier = ">=1.45.0" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "typer", specifier = ">=0.21.0" },
-    { name = "typing-extensions", specifier = ">=4.14.0" },
-    { name = "yfinance", specifier = ">=0.2.63" },
-]
-provides-extras = ["agentsdk"]
 
 [[package]]
 name = "truststore"

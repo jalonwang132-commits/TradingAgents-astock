@@ -1,626 +1,1261 @@
 <p align="center"><b>简体中文</b> | <a href="README_en.md">English</a></p>
 
-<h1 align="center">TradingAgents-Astock</h1>
+<h1 align="center">Jalon A股投研工作台</h1>
 
 <p align="center">
-  基于 <a href="https://github.com/TauricResearch/TradingAgents">TauricResearch/TradingAgents</a>（65K ⭐）的 A 股深度特化 fork<br>
-  全 Apache 2.0 开源 · pip install 即跑 · 零外部服务依赖
+  个人自用 · 本地部署 · 7 位 AI 分析师 · 免费 A 股数据源<br>
+  自己的模型 Key，自己的提示词，自己的报告。
 </p>
 
-<p align="center">
-  <b>⚠️ 本项目是 <a href="https://arxiv.org/abs/2412.20138">TradingAgents 论文</a>框架的工程实现与研究复现，面向研究与教学。<br>
-  不构成任何投资建议，也不提供任何投资服务。</b>
-</p>
+> **一句话**：把「7 位分析师 → 多空辩论 → 风控辩论 → 组合决策」这套多 Agent 投研流程，
+> 放到你自己的电脑上跑。行情数据从公开接口直连，模型用你自己的 API Key，报告只落在本机。
+
+> ⚠️ **仅供学习研究，不构成任何投资建议。** 本工具不提供建仓价、止损位、仓位或目标价，
+> 也不代客理财。投资决策请咨询持牌专业机构，使用本工具产生的任何损失由使用者自行承担。
+
+| 项目 | 说明 |
+|------|------|
+| **运行方式** | 本地 Web UI / CLI，不需要 Docker，不需要数据库 |
+| **Python** | >= 3.10（推荐 3.12 / 3.13） |
+| **数据** | mootdx + 腾讯 + 东财 + 新浪 + 同花顺 + 财联社 + 百度，**全部免费，无需数据 API Key** |
+| **模型** | DeepSeek / MiniMax / 通义 / 智谱 / OpenAI / Claude / Gemini / xAI / Ollama / 任意 OpenAI 兼容网关 |
+| **许可** | Apache-2.0（原始版权与修改声明见 [NOTICE](./NOTICE)） |
 
 <p align="center">
-  <a href="https://github.com/simonlin1212/tradingagents-astock/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/simonlin1212/tradingagents-astock?style=social"/></a>
-  <a href="https://github.com/simonlin1212/tradingagents-astock/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/simonlin1212/tradingagents-astock?style=social"/></a>
-  <a href="https://arxiv.org/abs/2412.20138"><img alt="论文" src="https://img.shields.io/badge/论文-arXiv_2412.20138-B31B1B?logo=arxiv"/></a>
-  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-blue"/></a>
-  <a href="./CHANGES_FROM_UPSTREAM.md"><img alt="改动记录" src="https://img.shields.io/badge/改动记录-CHANGES-orange"/></a>
-</p>
-
----
-
-<p align="center">
-  <a href="#为什么做这个-fork">为什么做这个 Fork</a> ·
-  <a href="#与上游对比">与上游对比</a> ·
-  <a href="#架构概览">架构概览</a> ·
-  <a href="#7-个-analyst-角色">Analyst 角色</a> ·
-  <a href="#数据源">数据源</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#web-ui">Web UI</a> ·
-  <a href="#常见问题排错">排错</a>
+  <img src="assets/web-ui-welcome.png" width="88%" alt="Jalon A股投研工作台">
 </p>
 
 ---
 
+## 目录
 
-## 为什么做这个 Fork
-
-原版 TradingAgents 是一个出色的多 Agent 投研框架，但它针对美股设计：数据走 Yahoo Finance / Alpha Vantage，分析师不懂 A 股制度，辩论和决策完全面向美股市场。
-
-**本 Fork 的目标**：把 TradingAgents 的多 Agent 辩论架构真正落地到 A 股，不是简单翻译，而是从数据层、Agent 角色、交易规则三个维度做深度特化。
-
-### 核心改造
-
-| 维度 | 原版 | 本 Fork |
-|------|------|---------|
-| **数据源** | Yahoo Finance / Alpha Vantage | mootdx + 东财 + 新浪 + 同花顺（全免费直连） |
-| **Analyst 角色** | 4 个（市场/情绪/新闻/基本面） | **7 个**（+政策分析师/游资追踪/解禁监控） |
-| **交易规则** | 美股（T+0、无涨跌停） | A 股（T+1、涨跌停、最小手数、交易时段） |
-| **输出语言** | 英文 | 中文报告（内部辩论保持英文以保证推理质量） |
-| **Alpha 基准** | SPY | 沪深 300（CSI 300） |
+- [这个工作台是做什么的](#这个工作台是做什么的)
+- [我会用它做什么](#我会用它做什么)
+- [核心能力](#核心能力)
+- [它是怎么跑的](#它是怎么跑的)
+- [7 位分析师](#7-位分析师)
+- [数据源](#数据源)
+- [快速开始：从零到跑起来](#快速开始从零到跑起来)
+  - [0. 先看这张准备清单](#0-先看这张准备清单)
+  - [1. 检查环境](#1-检查环境)
+  - [2. 没有环境怎么安装](#2-没有环境怎么安装)
+  - [3. 网络慢：镜像与代理](#3-网络慢镜像与代理)
+  - [4. 获取代码](#4-获取代码)
+  - [5. 创建虚拟环境](#5-创建虚拟环境)
+  - [6. 安装依赖](#6-安装依赖)
+  - [7. 配置模型](#7-配置模型)
+  - [8. 启动 Web UI](#8-启动-web-ui)
+  - [9. 第一次分析怎么点](#9-第一次分析怎么点)
+  - [10. 启动 CLI](#10-启动-cli)
+  - [11. 停止、更新、卸载](#11-停止更新卸载)
+  - [12. 常见问题排错](#12-常见问题排错)
+- [项目结构](#项目结构)
+- [常用配置](#常用配置)
+- [投研团队与「我的战法」](#投研团队与我的战法)
+- [数据与隐私](#数据与隐私)
+- [许可与归属](#许可与归属)
 
 ---
 
-## 与上游对比
+## 这个工作台是做什么的
 
-| 特性 | 原版 TradingAgents | **本 Fork** |
-|------|-------------------|-------------|
-| 许可证 | Apache 2.0 | **全 Apache 2.0** |
-| 部署依赖 | pip install | **开箱即用** |
-| A 股数据 | ❌ | **mootdx + 东财 + 新浪 + 同花顺（直连 HTTP）** |
-| A 股特化角色 | ❌ | **政策/游资/解禁 3 个深度角色** |
-| A 股交易约束 | ❌ | **T+1/涨跌停/手数/ST 全覆盖** |
+我把它定位成**一个人的盘后投研台**，不是荐股软件，也不是给团队用的 SaaS。
+
+它把一只 A 股股票丢进一条固定的多 Agent 流水线：技术面、情绪、新闻、基本面、政策、
+游资、解禁七个角度分别出报告，然后多空双方辩论，交易员给出方案，三位风控再从激进 /
+保守 / 中立三个立场吵一轮，最后组合经理给出评级和理由。整个过程在本地跑，结果落成
+Markdown / PDF，方便我事后回看当时到底是怎么判断的。
+
+### 为什么是本地部署
+
+- **数据不经过我的服务器**：这个仓库没有后端服务，行情从公开接口直接拉到你的电脑。
+- **模型由你选**：DeepSeek、MiniMax、通义、智谱、OpenAI、Claude、Gemini、Ollama，
+  或者你自己的中转网关。API Key 只写在你本机的 `.env` 里。
+- **提示词可见、可改**：每个角色的 system / user 提示词都能在 Web 里看到并修改，
+  不用改代码；改完下一次分析立即生效。
+- **报告归你**：分析结果、历史记录、记忆日志都在本机 `~/.tradingagents/` 下，
+  想删就删，想备份就备份。
+
+### 它不是什么
+
+- **不是投资顾问**：不荐股、不代客理财、不承诺收益。
+- **不输出可执行价位**：代码里没有建仓价 / 止损位 / 仓位 / 目标价这些字段，
+  Trader 和 Portfolio Manager 只给方向、评级和理由。
+- **不是数据服务**：不提供 Tushare 积分、不代理行情、不托管任何数据。
+- **不是开箱即用的 SaaS**：你需要自己装 Python、自己准备模型 Key、自己在终端启动。
 
 ---
 
-## 架构概览
+## 我会用它做什么
+
+- **收盘后复盘一只票**：输入 6 位代码或中文名，几分钟后拿到 7 份分析师报告、
+  多空辩论、风控意见和最终评级。
+- **按月 / 按自定义区间看**：把「数据起始日期」设到月初或更早，技术分析会按这个
+  窗口回溯，适合做月度复盘而不是只看今天。
+- **把判断过程存档**：导出 Markdown 或 PDF，和当时的行情截图放在一起；
+  过一段时间回看，能清楚看到自己（和模型）在哪一步看错。
+- **沉淀自己的规则**：在「我的战法」里写「RSI > 80 且 MACD 死叉 → 偏空」这类规则，
+  追加到指定角色的提示词末尾，不用每次重新交代。
+- **回看判断准不准**：`jalon performance` 读取记忆日志里已结算的记录，算方向正确率、
+  按评级分组的 alpha，零 LLM 调用。
+
+### 这个版本我最在意的几件事
+
+1. **投研团队是看得见的**：16 个角色按真实执行顺序排开，运行时逐个点亮，不再是一个黑盒进度条。
+2. **提示词和战法都能自己改**：每个角色的 system / user 提示词可以在浏览器里直接编辑；
+   「我的战法」把反复验证过的规则单独存成策略包，按角色生效，不用改代码。
+3. **跑完能复盘**：Markdown / PDF 导出、历史记录、决策绩效统计，判断和结果都留在本机。
+4. **本地优先、模型自选**：不依赖我的服务器，不强制用某一家模型，Key 只放在本机 `.env`。
+
+---
+
+## 核心能力
+
+| 能力 | 说明 |
+|------|------|
+| **7 位分析师** | 市场 / 情绪 / 新闻 / 基本面 + 政策 / 游资 / 解禁，覆盖 A 股特色因子 |
+| **多空辩论** | Bull 与 Bear 各自陈述、互相反驳，研究经理综合成投资计划 |
+| **三方风控** | 激进 / 保守 / 中立三位辩手 + 组合经理最终决策 |
+| **中文报告** | 面向中文输出；内部辩论保留英文，减少翻译损耗 |
+| **Web UI** | 侧栏输入代码即可跑，实时进度、报告展开、历史记录、Markdown/PDF 导出 |
+| **投研团队页** | 16 个角色按真实执行顺序展示；可在线查看 / 编辑每个角色的提示词 |
+| **我的战法** | 独立于内置提示词的个性化策略包，按角色生效，可启停、可预览合并结果 |
+| **模型自由** | 10+ 供应商；支持给单个角色指定不同模型（如多空辩手用不同厂商） |
+| **分角色模型** | `role_llms` 可让同一轮分析里不同角色走不同模型 |
+| **断点续跑** | 可选 SQLite checkpoint；长任务中断后不必从头再来 |
+| **决策绩效** | `jalon performance` 统计历史判断的方向正确率与 alpha |
+| **零数据 Key** | 行情 / 财务 / 新闻全部来自免费公开接口，不需要注册数据账号 |
+
+---
+
+## 它是怎么跑的
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    7 Analyst 研报生成                      │
+│              7 位分析师并行取数、各自出报告                 │
 │  Market → Social → News → Fundamentals                   │
 │  → Policy → Hot Money → Lockup                           │
-│         （每个 Analyst 带工具循环）                          │
 ├─────────────────────────────────────────────────────────┤
-│               Bull vs Bear 投研辩论                       │
-│         Bull Researcher ←→ Bear Researcher               │
-│               （最多 N 轮辩论）                             │
+│              质量门控（数据缺口检查）                       │
 ├─────────────────────────────────────────────────────────┤
-│              Research Manager 综合研判                     │
-│         （深度思考 LLM，输出投资计划）                       │
+│              Bull vs Bear 多空辩论                        │
 ├─────────────────────────────────────────────────────────┤
-│                  Trader 交易方案                          │
-│         （A 股约束：T+1/涨跌停/手数）                       │
+│              Research Manager 综合研判                    │
+├─────────────────────────────────────────────────────────┤
+│              Trader 交易方案（A 股约束）                   │
 ├─────────────────────────────────────────────────────────┤
 │        Aggressive ←→ Conservative ←→ Neutral             │
-│               三方风险辩论                                 │
+│                三方风险辩论                               │
 ├─────────────────────────────────────────────────────────┤
-│            Portfolio Manager 最终决策                      │
-│     （深度思考 LLM，输出评级 + 理由）                       │
+│         Portfolio Manager 最终评级 + 理由                  │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**双 LLM 设计**：
-- `quick_think_llm`：所有 Analyst、Researcher、Trader、Risk Debater
-- `deep_think_llm`：Research Manager 和 Portfolio Manager（需要综合全局信息做决策）
+**双模型档位**：
+
+- `quick_think_llm`：分析师、研究员、交易员、风控辩手，调用量大，建议用快模型。
+- `deep_think_llm`：研究经理、组合经理，需要综合全局信息，建议用强模型。
+
+> 一次完整分析通常有 30~50 次 LLM 调用。用便宜的快模型 + 1 轮辩论，成本和时间都会明显下降。
 
 ---
 
-## 7 个 Analyst 角色
+## 7 位分析师
 
-### 原版 4 角色（A 股适配）
+### 通用四角色（A 股适配）
 
-<table>
-<thead>
-<tr><th nowrap>角色</th><th nowrap>职责</th><th>数据工具</th></tr>
-</thead>
-<tbody>
-<tr><td nowrap>🏪 市场分析师</td><td nowrap>K 线形态、技术指标、量价分析</td><td><code>get_stock_data</code>, <code>get_indicators</code></td></tr>
-<tr><td nowrap>💬 舆情分析师</td><td nowrap>社交媒体情绪、散户讨论热度</td><td><code>get_news</code></td></tr>
-<tr><td nowrap>📰 新闻分析师</td><td nowrap>行业新闻、公告、宏观事件</td><td><code>get_news</code>, <code>get_global_news</code>, <code>get_insider_transactions</code></td></tr>
-<tr><td nowrap>📊 基本面分析师</td><td nowrap>财报三表、盈利能力、估值</td><td><code>get_fundamentals</code>, <code>get_balance_sheet</code>, <code>get_cashflow</code>, <code>get_income_statement</code></td></tr>
-</tbody>
-</table>
+| 角色 | 职责 | 主要工具 |
+|------|------|----------|
+| 📊 市场分析师 | K 线形态、技术指标、量价关系 | `get_stock_data`, `get_indicators` |
+| 💬 舆情分析师 | 社交媒体情绪、散户讨论热度 | `get_news` |
+| 📰 新闻分析师 | 行业新闻、公告、宏观事件 | `get_news`, `get_global_news`, `get_insider_transactions` |
+| 📋 基本面分析师 | 财报三表、盈利能力、估值 | `get_fundamentals`, `get_balance_sheet`, `get_cashflow`, `get_income_statement` |
 
-### A 股特化 3 角色（新增）
+### A 股特化三角色
 
-<table>
-<thead>
-<tr><th nowrap>角色</th><th>职责</th><th>数据工具</th><th>为什么需要</th></tr>
-</thead>
-<tbody>
-<tr><td nowrap>🏛️ 政策分析师</td><td>监管政策、产业政策、窗口指导</td><td><code>get_news</code>, <code>get_global_news</code></td><td>A 股是政策市，政策变化直接影响板块轮动</td></tr>
-<tr><td nowrap>🔥 游资追踪师</td><td>龙虎榜、大单流向、主力资金动态</td><td><code>get_stock_data</code>, <code>get_news</code>, <code>get_insider_transactions</code></td><td>游资是 A 股短线定价的核心力量</td></tr>
-<tr><td nowrap>🔓 解禁监控师</td><td>限售股解禁、大股东减持、股权质押</td><td><code>get_insider_transactions</code>, <code>get_news</code>, <code>get_fundamentals</code></td><td>解禁是 A 股特有的重大供给冲击因素</td></tr>
-</tbody>
-</table>
+| 角色 | 职责 | 为什么需要 |
+|------|------|-----------|
+| 🏛️ 政策分析师 | 监管政策、产业政策、窗口指导 | A 股是政策市，政策变化直接影响板块轮动 |
+| 🔥 游资追踪师 | 龙虎榜、大单流向、主力资金动态 | 游资是 A 股短线定价的重要力量 |
+| 🔓 解禁监控师 | 限售股解禁、大股东减持、股权质押 | 解禁是 A 股特有的供给冲击因素 |
 
-所有 7 个 Analyst 的报告会流入后续的 Bull/Bear 辩论和三方风险辩论，确保 A 股特色因素贯穿整条决策链。
+7 份报告都会进入后续辩论和决策，不是只给一个人看。
 
 ---
 
 ## 数据源
 
-全部免费，无需 API Key，无积分墙：
+全部免费，不需要数据 API Key，也没有积分墙：
 
 | 来源 | 协议 | 提供内容 |
-|------|------|---------|
+|------|------|----------|
 | **mootdx** | TCP 7709 | OHLCV K 线、财务快照、F10 文本 |
 | **腾讯财经** | HTTP (`qt.gtimg.cn`) | PE / PB / 市值 / 换手率（实时） |
-| **东方财富** | HTTP (datacenter / push2) | 龙虎榜、限售解禁、板块行情、个股信息 |
+| **东方财富** | HTTP (datacenter / push2) | 龙虎榜、限售解禁、板块行情、个股信息、资金流 |
 | **新浪财经** | HTTP | K 线历史、财报三表 |
-| **同花顺** | HTTP (10jqka) | EPS 一致预期 |
+| **同花顺** | HTTP (10jqka) | EPS 一致预期、热股题材 |
 | **财联社** | HTTP (cls.cn) | 全球财经快讯 |
-| **百度股市通** | HTTP (finance.pae.baidu) | 概念板块分类、资金流向 |
+| **百度股市通** | HTTP | 概念板块归属 |
 
-> 完全不依赖 Tushare（积分墙）、Alpha Vantage（海外 API）、Yahoo Finance（不支持 A 股）。
-
----
-
-> **数据源优先级 & 东财防封（v0.2.11）**：行情 / K线 / 市值 / 财务能从 mootdx（通达信 TCP，不封 IP）或腾讯拿到的，一律走它们；东财只用于它独有的数据（龙虎榜 / 解禁 / 资金流 / 板块 / 个股新闻等）。所有东财请求统一走内置节流入口 `_em_get()`：串行限流（默认间隔 ≥1s + 0.1~0.5s 随机抖动）+ 复用 Keep-Alive 会话，多 Agent 跑批量分析不再触发临时封 IP（东财风控实测：每秒 >5 / 并发 ≥10 / 1 分钟 ≥200 触发封禁）。批量场景可设环境变量 `EM_MIN_INTERVAL=1.5~2` 进一步降速。**仅东财限流，mootdx / 腾讯 / 新浪 / 同花顺 / 财联社 / 百度 不受影响。**
-
-## 快速开始
-
-### 1. 环境准备
-
-```bash
-# Python >= 3.10
-git clone https://github.com/simonlin1212/tradingagents-astock.git
-cd tradingagents-astock
-pip install -e .
-
-# 如需使用 Google Gemini 模型（无 [google] extra，需显式装，见下方 FAQ）：
-pip install --no-deps "langchain-google-genai>=4.0.0"
-pip install "google-genai>=1.53.0" "httpx>=0.28.1"
-
-# 如需让节点走你个人 Claude Pro/Max 订阅额度而非 API 计费（可选）：
-pip install -e ".[agentsdk]"
-```
-
-> **装完即可用，无需 Docker。** 安装后直接跑 `streamlit run web/app.py`（Web UI）或 `tradingagents`（CLI）即可，详见下方「Web UI」「CLI 方式」两节。Docker 仅是可选的部署方式，本地开发不需要。
-
-### 2. 配置 LLM
-
-> **默认走 API Key 计费**。每次分析需 30-50 次 LLM 调用。
->
-> **例外（v0.4.0 新增）**：装 `[agentsdk]` 后可让部分或全部节点经 Claude Agent SDK 走你**个人 Claude Pro/Max 订阅额度**，不产生 API 账单。见下方「用个人 Claude 订阅额度」。
-
-在项目根目录创建 `.env` 文件，按你选择的供应商配置：
-
-```bash
-# ── 方案 A：MiniMax（推荐，国内直连，性价比高）──────────
-MINIMAX_API_KEY=sk-xxx
-# 申请地址：https://platform.minimaxi.com/
-
-# ── 方案 B：DeepSeek ─────────────────────────────────
-DEEPSEEK_API_KEY=sk-xxx
-# 申请地址：https://platform.deepseek.com/
-
-# ── 方案 C：智谱 GLM ─────────────────────────────────
-ZHIPU_API_KEY=xxx
-# 申请地址：https://open.bigmodel.cn/
-
-# ── 方案 D：通义千问 Qwen ────────────────────────────
-DASHSCOPE_API_KEY=sk-xxx
-# 申请地址：https://dashscope.console.aliyun.com/
-
-# ── 方案 E：OpenAI ───────────────────────────────────
-OPENAI_API_KEY=sk-xxx
-
-# ── 方案 F：Anthropic ────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-xxx
-
-# ── 方案 G：Kimi（Anthropic 兼容 API）────────────────
-ANTHROPIC_API_KEY=your-kimi-token
-ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
-# ⚠️ 两个都要设。只给 key 不给端点，请求会发到 Anthropic 官方并报
-#    「401 invalid x-api-key」。端点也可以写在 config 的 backend_url 里（见下）。
-# ⚠️ 别用 ANTHROPIC_AUTH_TOKEN——那是 Claude Code CLI 的写法，本项目走 langchain，
-#    只认 ANTHROPIC_API_KEY。
-
-# ── 方案 H：任意 OpenAI 兼容网关（9Router / AI Router / 自建代理）──
-OPENAI_COMPATIBLE_API_KEY=sk-xxx     # 也接受 OPENAI_API_KEY
-BACKEND_URL=https://your-relay.example/v1   # 你的网关地址（也可在 Web 侧栏「API Base URL」填）
-```
-
-### 3. 运行分析
-
-新建一个 Python 文件（比如项目根目录下的 `run.py`），把下面这段粘进去，按你选的供应商改 `config` 后运行 `uv run python run.py`。根目录自带的 `main.py` 就是这个示例的可运行版本，直接 `uv run python main.py` 也行。
-
-> `config` 不是仓库里的某个配置文件，而是传给 `TradingAgentsGraph(config=...)` 的一个字典：只写你要覆盖的项，其余项自动取 `tradingagents/default_config.py` 里的默认值（完整可选项见下文「配置说明」一节）。
-
-```python
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-
-# ── MiniMax 示例（推荐）─────────────────────────────
-config = {
-    "llm_provider": "minimax",
-    "deep_think_llm": "MiniMax-M2.7",
-    "quick_think_llm": "MiniMax-M2.7-highspeed",
-    "output_language": "Chinese",
-}
-
-# ── DeepSeek 示例 ───────────────────────────────────
-# config = {
-#     "llm_provider": "deepseek",
-#     "deep_think_llm": "deepseek-chat",
-#     "quick_think_llm": "deepseek-chat",
-#     "output_language": "Chinese",
-# }
-
-# ── Anthropic + Kimi 示例 ───────────────────────────
-# config = {
-#     "llm_provider": "anthropic",
-#     "deep_think_llm": "claude-sonnet-4-6",
-#     "quick_think_llm": "claude-sonnet-4-6",
-#     "backend_url": "https://api.kimi.com/coding/",
-#     "output_language": "Chinese",
-# }
-
-ta = TradingAgentsGraph(debug=True, config=config)
-final_state, decision = ta.propagate("688017", "2026-05-12")
-print(decision)
-```
-
-### 4. CLI 方式
-
-```bash
-tradingagents                 # 交互式 CLI
-tradingagents analyze         # 同上（默认命令）
-tradingagents performance     # 决策绩效统计（见下）
-tradingagents --help          # 查看所有选项
-```
-
-### 5. 决策绩效统计（v0.5.2 新增）
-
-想知道**这套流程过往的判断准不准**，跑：
-
-```bash
-tradingagents performance            # 人读的报告
-tradingagents performance --json     # 机器读的 JSON
-```
-
-数据来自记忆日志：每次分析会落一条决策，下次分析同一只股票时自动拉真实行情回填收益与 alpha（对沪深 300）。**统计本身零 LLM 调用**，只读已经落盘的结果。
-
-输出的核心指标是 **`direction_accuracy`（方向正确率）**——**只有它衡量判断准不准**：看多要跑赢、看空要跑输才算对，Hold 不表态不计入。另外给出 `up_rate`（标的上涨占比）与 `outperform_rate`（跑赢沪深300占比），这两个只描述标的怎么走，**与判断对错无关**：给出卖出评级后股价下跌是判断正确，但它不会计入「上涨占比」。
-
-还有按评级、按标的分组，以及一项**评级区分度检验**——五档评级从 Buy 到 Sell，平均 alpha 是否真的单调递减。评级不单调，说明这套流程的评级没有实际区分能力。
-
-几点务必注意：
-
-- **这不是回测，也不是策略业绩。** 每条记录是「某天做出的判断在固定持有期后的表现」：持有窗口互相重叠、没有仓位管理、未计交易成本与冲击成本，样本还可能有选择偏差。
-- **A 股 beta 很强**，跟着大盘涨不代表判断对，所以方向正确率用 alpha 口径判定，看绝对收益容易高估判断力。
-- **样本量分开算**：方向正确率只统计有方向的评级，已结算总数够、但有方向的不足 20 条时，报告会单独提示这个指标仍是噪音。
-- **样本少于 20 条时报告会自己标注「这些比率基本是噪音」**，不要拿三五条记录下结论。
-- 收益解析不出来的记录会被**跳过**而不是当成 0%——后者会把统计悄悄拉向中性。
+> **关于东财限流**：东方财富的风控比较敏感，代码里所有东财请求都走统一节流入口
+> `_em_get()`：默认间隔 ≥1 秒 + 随机抖动 + 复用连接。批量跑多只票时可以设
+> `EM_MIN_INTERVAL=1.5~2` 进一步降速。mootdx / 腾讯 / 新浪 / 同花顺 / 财联社 / 百度
+> 不受这个限流影响。
 
 ---
 
-## Web UI
+## 快速开始：从零到跑起来
 
-内置 Streamlit 可视化界面，支持在侧边栏选择 LLM 供应商和模型，输入股票代码即可一键分析，适合不写代码的用户。
+> 下面按「完全没装过环境」的视角写。已经装好 Python 和 git 的，可以直接跳到
+> [第 4 步](#4-获取代码)。
 
-### 启动
+### 0. 先看这张准备清单
 
-```bash
-# 方式一：命令行启动（推荐）
-tradingagents-web
+| 你需要 | 要求 | 说明 |
+|--------|------|------|
+| 电脑 | macOS 12+ / Windows 10+ / Ubuntu 20.04+ | 4GB 内存够跑，8GB 更稳 |
+| Python | >= 3.10 | 推荐 3.12 或 3.13；3.9 不行 |
+| git | 任意 2.x | 用来 clone 仓库；没有也能下 ZIP |
+| 网络 | 能访问 GitHub 和 PyPI | 慢的话看[第 3 步](#3-网络慢镜像与代理) |
+| LLM API Key | 至少一个 | DeepSeek / MiniMax / 通义 / 智谱 / OpenAI 等 |
+| 磁盘 | 2GB 空闲 | 依赖 + 缓存 + 报告 |
 
-# 方式二：直接运行
-streamlit run web/app.py
-```
-
-打开浏览器访问 `http://localhost:8501`。
-
-### 功能
-
-- **配置记住**：侧栏选的供应商 / 模型 / Base URL / 订阅覆盖写入 `~/.tradingagents/llm_config.json`，重开标签页或重启后自动恢复（v0.5.17）
-- **模型自选**：侧边栏支持 10 个 LLM 供应商切换（MiniMax/DeepSeek/Qwen/GLM/OpenAI/Anthropic/Google/xAI/OpenRouter/Ollama），外加 **「OpenAI 兼容（自定义 base_url）」** 一档可接任意 OpenAI 兼容网关（9Router / AI Router / 自建代理）
-- **一键分析**：输入 6 位 A 股代码 + 分析日期 +「数据起始日期」（默认本月第一天，可自定义技术分析回溯区间，支持按月/自定义时段分析），点击「开始分析」
-- **实时进度**：12 阶段 pipeline 实时显示（7 分析师 → 质量门控 → 辩论 → 风控 → 决策），所有已完成阶段的报告均可展开查看
-- **完整报告**：信号卡片（Buy/Hold/Sell）、7 份分析师报告、多空辩论、风控评估
-- **报告导出**：一键下载 **Markdown**（零依赖，永远可用）或 **PDF** 完整分析报告（PDF 自动适配 Windows/macOS/Linux 中文字体）
-- **历史记录**：自动保存并展示所有历史分析
-
-### 投研团队：可视化 + 提示词在线编辑
-
-侧栏切到 **「🧑‍💼 投研团队」**，可以：
-
-- **看完整团队**：7 位分析师 → 质量门控 → 多空辩论 → 研究经理 → 交易员 → 激进/保守/中性风控 → 组合经理，16 个角色按真实执行顺序排列；运行中会实时点亮「进行中 / 已完成」，未参与的分析师标为「未参与」。
-- **看每个角色的提示词**：点任意角色卡片，可在「编辑提示词」里直接改，在「完整提示词预览」里看到**真正会发出去**的 system / user 全文（报告、辩论历史等运行时变量用示例值占位）；「角色详情」列出该角色绑定的工具、输出字段、模型档位和模板变量。
-- **改完立即用于下一次分析**：保存后写入 `~/.tradingagents/team_config.json`，下一次「开始分析」生效；正在跑的任务不会被中途改写。支持单角色恢复默认、全部恢复默认、导入/导出 JSON。
-- **调配团队**：在「团队编排」里选择本次参与的分析师（至少 1 位）、多空辩论轮数（1-5）、风险辩论轮数（1-5）。
-- **注入个人战法**：在「🎯 我的战法」里新增策略包，填写名称、作用角色和规则（例如「RSI(14) > 80 且 MACD 死叉 → 超级空头」）。战法会追加到对应角色提示词末尾，与内置基础提示词分开保存；支持启用/停用、按角色生效、删除和合并预览。
-
-对应的 `config` 键：
-
-```python
-config["agent_prompts"] = {          # 只写改过的角色/片段，其余用内置默认
-    "market": {"system": "……"},
-    "trader": {"system": "……", "user": "……"},
-}
-config["selected_analysts"] = ["market", "social", "news", "fundamentals",
-                               "policy", "hot_money", "lockup"]
-config["strategy_packs"] = [         # 「我的战法」，scope 为空 = 全部角色
-    {
-        "id": "sp_demo",
-        "name": "超级空头",
-        "scope": ["market", "bear", "risk_conservative"],
-        "content": "RSI(14) > 80 且 MACD 死叉 => 超级空头，置信度 0.8。",
-        "enabled": True,
-    }
-]
-```
-
-战法里可以用 `{ticker}` / `{date}`（所有角色），分析师还可用 `{lookback}`，辩论/决策角色可用 `{history}`、`{reports}` 等。**当前工具不支持的指标（KDJ/OBV/ADX 等）写在战法里也取不到数**，需要先扩展 `get_indicators`；需要硬性判定的规则，建议后续做成代码级规则引擎，而不是只靠 LLM 执行。
-
-内置默认提示词集中在 `tradingagents/agents/prompt_defaults.py`，页面与 agent 共用同一份，不存在「页面显示一份、实际请求另一份」的问题。
-
-### 截图
-
-<p align="center">
-  <img src="assets/web-ui-welcome.png" width="80%" alt="Web UI 欢迎页"/>
-</p>
-
----
-
-## 配置说明
-
-所有配置通过 `config` 字典传入，完整选项：
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `llm_provider` | `"minimax"` | LLM 提供商：`minimax` / `deepseek` / `qwen` / `glm` / `openai` / `anthropic` / `google` / `xai` / `ollama` |
-| `deep_think_llm` | `"MiniMax-M2.7"` | Research Manager + Portfolio Manager 用的模型 |
-| `quick_think_llm` | `"MiniMax-M2.7-highspeed"` | 所有 Analyst / Researcher / Trader 用的模型 |
-| `backend_url` | `None` | 自定义 API 端点 / 第三方中转网关。可在 Web UI 侧边栏填写，或用 `.env` 的 `BACKEND_URL`；方便国内通过代理访问 Claude / OpenAI。**跑远程 Ollama 也是填这里**：`llm_provider` 选 `ollama`、`backend_url` 填 `http://<主机>:11434/v1`，不填则默认本机 `http://localhost:11434/v1`（#61） |
-| `role_llms` | `{}` | **可选**：给单个角色指定另一家模型（如多空辩手用不同厂商），留空 = 全部沿用 quick/deep 两档，行为不变。见下方「分角色模型」 #39 |
-| `max_tokens` | `None` | 单次回复的最大输出 token 数。`None` = 用 provider 默认值。**报告写到一半就断，先调这里**（不是上下文超长）；也可用环境变量 `TRADINGAGENTS_MAX_TOKENS`。#91 |
-| `output_language` | `"Chinese"` | 报告输出语言（内部辩论始终英文） |
-| `market_lookback_days` | `None` | 技术分析回溯天数（分析区间 = 起始日期 → 分析日期）。Web/CLI 由「数据起始日期」自动算出；`None` = 模型自选（约 30 天）。#16 |
-| `llm_timeout` | `150` | 单次 LLM 请求超时（秒），**对所有走 LangChain 客户端的 provider 生效**（`openai` / `anthropic` / `google` / `azure` 及全部 OpenAI 兼容项，订阅撞额度后的降级客户端也带）。此前没有超时：LangChain 的三个封装层（ChatOpenAI / ChatAnthropic / AzureChatOpenAI）在没给超时时都把 `None` **显式**传给底层 SDK，而这在 httpx 里的语义是「不设超时」——挂起的网关会让分析**永久卡住**（进程活着、零输出、永不返回）。`claude_agent_sdk` 订阅覆盖的**主路径**不走 LangChain 客户端，v0.5.20 起由客户端自己实现同一个配置项：订阅调用的整段预算 = 本项 × 该次调用允许的模型轮数（Agent SDK 把整个工具循环跑在**一次**调用里，单轮调用就等于本项本身），超时按限流同样的路径降级。深度推理模型如果经常在吐出首个 token 之前就超过这个值，把它调大（#100） |
-| `llm_max_retries` | `3` | 应用层重试次数，覆盖 408 / 409 / 429 / 5xx 与连接类错误（含读超时），即 OpenAI SDK 原本会重试的那一套。**仅作用于走 OpenAI 兼容客户端的 provider**（`openai` / `deepseek` / `qwen` / `glm` / `minimax` / `xai` / `openrouter` / `ollama` / `openai_compatible`）：只有它们的 SDK 层重试被置 0 并交给应用层；Anthropic / Google / Azure 沿用各家 SDK 自己的重试，不碰 |
-| `llm_retry_delay` | `5` | 重试初始退避秒数，指数翻倍：5s → 10s → 20s |
-| `max_debate_rounds` | `1` | Bull vs Bear 辩论轮数 |
-| `max_risk_discuss_rounds` | `1` | 风险三方辩论轮数 |
-| `data_vendors` | 全部 `"a_stock"` | 数据供应商路由 |
-| `checkpoint_enabled` | `False` | 启用 SQLite 断点续跑 |
-| `memory_log_max_entries` | `None` | 交易记忆最大条目数 |
-
----
-
-### 分角色模型（可选，v0.5.0 新增）
-
-默认所有角色共用 `quick_think_llm` / `deep_think_llm` 两档——**大多数人只有一家模型，不需要碰这一项**。
-
-如果你手上有多家模型，可以给单个角色单独指定。最典型的用法是**让多空辩手用不同厂商的模型**：同一个模型分饰多角时倾向于互相附和，换成不同底座才会真的出现反驳。
-
-```python
-config = {
-    "llm_provider": "deepseek",          # 未单独配置的角色仍走这里
-    "deep_think_llm": "deepseek-chat",
-    "quick_think_llm": "deepseek-chat",
-    "role_llms": {
-        "bull": {"provider": "qwen",    "model": "qwen-plus"},
-        "bear": {"provider": "glm",     "model": "glm-4.6"},
-        # provider 省略则沿用 llm_provider，只换模型：
-        "portfolio_manager": {"model": "deepseek-reasoner"},
-    },
-}
-```
-
-合法角色名（其余角色自动沿用两档默认）：
-
-| 分组 | 角色名 |
-|------|--------|
-| 7 个分析师 | `market` `social` `news` `fundamentals` `policy` `hot_money` `lockup` |
-| 辩论与决策 | `bull` `bear` `research_manager` `trader` |
-| 风险三方 | `risk_aggressive` `risk_neutral` `risk_conservative` |
-| 其他 | `quality_gate` `portfolio_manager` |
-
-几点说明：
-
-- **角色名写错会直接报错**，不会静默忽略——否则你会以为配置生效了，实际没有。
-- **相同的 provider + model 只建一个实例**，写 7 个角色不会开 7 条连接。
-- 每家 provider 用**自己的** API Key 环境变量（`DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `ZHIPU_API_KEY` …），缺哪个会指名报出来。
-- 换了 provider 时**不会**把 `backend_url` 带过去（那是给主 provider 配的端点），需要的话在该角色里单独写 `backend_url`。
-- 同时开着 `claude_agent_sdk` 订阅覆盖时，`role_llms` 里配的角色会**绕开订阅按 token 计费**，启动时会点名警告是哪几个。
-
----
-
-## 常见问题排错
-
-**Q: 用 DeepSeek/通义/智谱，却报 `OpenAIError: The api_key client option must be set ... OPENAI_API_KEY`？**
-每个供应商用**各自的环境变量**，不是 OPENAI_API_KEY：DeepSeek=`DEEPSEEK_API_KEY`、通义=`DASHSCOPE_API_KEY`、智谱=`ZHIPU_API_KEY`、MiniMax=`MINIMAX_API_KEY`、xAI=`XAI_API_KEY`、OpenRouter=`OPENROUTER_API_KEY`、OpenAI 兼容（自定义）=`OPENAI_COMPATIBLE_API_KEY`。在项目根目录 `.env` 里设置对应变量后**重启**程序。（v0.2.12 起缺 key 会直接提示该用哪个变量名。）
-
-**Q: 想接一个 OpenAI 兼容的第三方网关/中继（9Router、AI Router、自建代理），自定义 base_url + model？**
-用 **「OpenAI 兼容（自定义 base_url）」** 这一档（v0.2.20 新增）。Web 侧栏「LLM 供应商」选它 →「快速/深度思考模型 ID」手动填你网关支持的 model 名 →「API Base URL」填你的网关地址（如 `https://your-relay.example/v1`）→ `.env` 里设 `OPENAI_COMPATIBLE_API_KEY=你的key`（也接受 `OPENAI_API_KEY`）。CLI 方式选 `OpenAI-Compatible` 后会提示输入 Base URL。它走标准 Chat Completions（非 OpenAI Responses API，兼容性最好），model 名自由填、不受内置清单限制。配置方式等价：`llm_provider="openai_compatible"` + `backend_url="<你的网关>"` + `deep_think_llm/quick_think_llm="<你的model>"`。
-
-**Q: 明明装了 Python 3.12/3.14，`pip install -e .` 却报 `requires a different Python: 3.9.6 not in '>=3.10'`？**
-报错里的 **3.9.6 就是当前这个 `pip` 绑定的解释器版本**——你装的新版本没被它用上（macOS 自带的 `pip3` 常指向系统 3.9）。先确认是哪个解释器在跑：
+**最快的一条路径**（已经装好 Python 和 git 的人）：
 
 ```bash
-pip3 -V                    # 末尾括号里就是它绑定的 Python
-python3.12 -m pip -V       # 换成你想用的版本再看
-```
-
-用 `python -m pip` 的写法就不会认错人，推荐配合虚拟环境：
-
-```bash
-python3.12 -m venv .venv && source .venv/bin/activate
+git clone https://github.com/jalonwang132-commits/TradingAgents-astock.git
+cd TradingAgents-astock
+python3 -m venv .venv && source .venv/bin/activate
 python -m pip install -e .
+cp .env.example .env        # 编辑 .env，填一个模型 Key
+jalon-web
 ```
 
-Windows 用 `py -3.12 -m venv .venv` + `.venv\Scripts\activate`。（#92）
+Windows 把 `source .venv/bin/activate` 换成 `.venv\Scripts\Activate.ps1`，
+`cp` 换成 `copy`。下面每一步都有详细说明和排错。
 
-**Q: 报告写到一半就结束了，上下文明明没超长？**
-撞的是**输出**上限，不是上下文上限——模型一次回复能吐多少 token 是另一个限制。v0.4.1 起，这种截断会在日志里明确告诉你（`因为达到输出上限被截断`），不再是默默给你半篇报告。调大即可：config 里设 `max_tokens`（例如 `"max_tokens": 16000`），或设环境变量 `TRADINGAGENTS_MAX_TOKENS=16000`。
+---
 
-另外，用 **Kimi 等第三方模型名走 `anthropic` 通道**时，langchain 认不出模型名，会默认一个很小的输出上限（旧版本表现为报告普遍偏短）。v0.4.1 起这种情况会自动放宽到 8192，仍不够就显式配 `max_tokens`。#91
+### 1. 检查环境
 
-**Q: 接 Kimi 报 `401 invalid x-api-key`？**
-说明请求发到了 **Anthropic 官方**而不是 Kimi——光给 key 没给端点。两个都要给：
+先打开终端：
+
+- **macOS**：`Command + 空格`，输入 `Terminal`，回车。
+- **Windows**：开始菜单搜索 `PowerShell`，右键「以管理员身份运行」不是必须的，
+  普通窗口即可。
+- **Linux**：`Ctrl + Alt + T`。
+
+#### 1.1 一条命令看三样
+
+macOS / Linux：
 
 ```bash
+python3 --version && python3 -m pip --version && git --version
+```
+
+Windows PowerShell：
+
+```powershell
+py --version; py -m pip --version; git --version
+```
+
+#### 1.2 怎么看结果
+
+| 输出 | 结论 |
+|------|------|
+| `Python 3.12.x` / `3.13.x` | ✅ 可以直接用 |
+| `Python 3.10.x` / `3.11.x` | ✅ 满足最低要求 |
+| `Python 3.9.x` 或更低 | ❌ 需要装新 Python（看第 2 步） |
+| `pip 24.x` 或更高 | ✅ 正常 |
+| `git version 2.x` | ✅ 正常 |
+| `command not found` / `不是内部或外部命令` | ❌ 对应工具没装（看第 2 步） |
+
+> **`python`、`python3`、`py` 有什么区别？**
+> macOS / Linux 通常用 `python3`；Windows 官方安装器自带 `py` 启动器。
+> 如果 `python3` 指向 3.9，但你已经装了 3.12，直接用 `python3.12` 或 `py -3.12`，
+> 不要跟系统自带的旧 Python 较劲。
+
+#### 1.3 检查 pip 绑定的是哪个 Python
+
+这一步很关键。`pip` 可能绑定在系统旧 Python 上，导致后面报
+`requires a different Python: 3.9.6 not in '>=3.10'`。
+
+```bash
+python3 -m pip -V
+# 末尾括号里就是它绑定的 Python，例如：
+# pip 25.x from ... (python 3.12)
+```
+
+**永远用 `python -m pip` 的写法**，不要直接敲 `pip`，就不会认错解释器。
+
+---
+
+### 2. 没有环境怎么安装
+
+#### 2.1 安装 Python
+
+##### macOS
+
+**方式 A：官方安装包（推荐给不想折腾的人）**
+
+1. 打开 <https://www.python.org/downloads/macos/>。
+2. 下载 Python 3.12 或 3.13 的 macOS 安装包（Apple Silicon 选 `arm64`，Intel 选 `x86_64`）。
+3. 双击安装，一路继续。
+4. 新开一个终端，验证：
+
+```bash
+python3.12 --version
+```
+
+**方式 B：Homebrew**
+
+```bash
+# 先装 Homebrew（如果还没有）
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 装 Python 3.12
+brew install python@3.12
+
+# 验证
+python3.12 --version
+```
+
+如果 Homebrew 安装脚本或 bottle 下载很慢，看[第 3.4 节](#34-homebrew--apt-镜像)。
+
+> macOS 自带的 `/usr/bin/python3` 通常是 3.9，不要用它。装完新 Python 后，
+> 用 `python3.12` 或 `python3.13` 明确指定版本。
+
+##### Windows
+
+**方式 A：官方安装包（推荐）**
+
+1. 打开 <https://www.python.org/downloads/windows/>。
+2. 下载 Python 3.12 或 3.13 的 64-bit installer。
+3. **安装第一页务必勾选 `Add python.exe to PATH`**。
+4. 选 `Install Now`，等待完成。
+5. 新开 PowerShell，验证：
+
+```powershell
+py --version
+```
+
+**方式 B：winget**
+
+```powershell
+winget install -e --id Python.Python.3.12
+```
+
+装完新开终端，`py -3.12 --version` 能出版本即可。
+
+> 如果敲 `python` 弹出 Microsoft Store，说明 PATH 里没有真正的 Python。
+> 用 `py` 启动器，或者重新安装并勾选 `Add python.exe to PATH`。
+
+##### Linux（Ubuntu / Debian）
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git
+python3 --version
+```
+
+如果系统源里的 Python 低于 3.10（例如 Ubuntu 20.04 自带 3.8），用 deadsnakes PPA：
+
+```bash
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install -y python3.12 python3.12-venv
+python3.12 --version
+```
+
+CentOS / RHEL / Fedora：
+
+```bash
+sudo dnf install -y python3.12 python3.12-pip git
+python3.12 --version
+```
+
+> 不想动系统 Python 的话，可以用 `conda` 或 `pyenv` 单独装一个 3.12 环境，
+> 效果一样。后面所有命令把 `python3` 换成你实际用的解释器即可。
+
+#### 2.2 安装 git
+
+- **macOS**：终端执行 `xcode-select --install`，按提示装 Command Line Tools；
+  或者 `brew install git`。
+- **Windows**：到 <https://git-scm.com/download/win> 下载安装包，一路默认即可；
+  或者 `winget install --id Git.Git -e`。
+- **Linux**：`sudo apt install -y git`（Debian/Ubuntu）或
+  `sudo dnf install -y git`（Fedora）。
+
+验证：
+
+```bash
+git --version
+```
+
+#### 2.3 安装 uv（可选，但推荐）
+
+`uv` 是一个更快的 Python 包管理器，能顺便帮你管理虚拟环境和 Python 版本。
+不装也能用 `pip`，后面的命令两种都给了。
+
+```bash
+# 方式一：用 pip 装（走 PyPI 镜像，国内更快）
+python3 -m pip install uv -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 方式二：官方脚本（需要能访问 astral.sh）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+验证：
+
+```bash
+uv --version
+```
+
+> 如果 `uv` 装完提示 `command not found`，把 `~/.local/bin` 加进 PATH：
+> `export PATH="$HOME/.local/bin:$PATH"`，然后写进 `~/.zshrc` 或 `~/.bashrc`。
+
+---
+
+### 3. 网络慢：镜像与代理
+
+这一节解决三类慢：
+
+1. `git clone` GitHub 慢 / 超时；
+2. `pip install` / `uv sync` 下载 PyPI 包慢；
+3. 装 Python、Homebrew 本身慢。
+
+> 镜像站可用性会变，下面的地址如果 403 / 超时，换同类的另一个即可。
+> **不要在不信任的镜像里输入账号密码或 API Key。**
+
+#### 3.1 GitHub clone 慢
+
+**方式 A：浅克隆（只拉最新一次提交，最快）**
+
+```bash
+git clone --depth 1 https://github.com/jalonwang132-commits/TradingAgents-astock.git
+```
+
+**方式 B：走 GitHub 镜像前缀**
+
+```bash
+# ghproxy（可用性会变，失效就换下一个）
+git clone https://ghproxy.net/https://github.com/jalonwang132-commits/TradingAgents-astock.git
+
+# gh-proxy
+git clone https://gh-proxy.com/https://github.com/jalonwang132-commits/TradingAgents-astock.git
+
+# gitclone
+git clone https://gitclone.com/github.com/jalonwang132-commits/TradingAgents-astock.git
+```
+
+**方式 C：你本机有代理（Clash / V2Ray 等，端口 7890）**
+
+```bash
+git config --global http.proxy http://127.0.0.1:7890
+git config --global https.proxy http://127.0.0.1:7890
+
+# 用完想取消：
+git config --global --unset http.proxy
+git config --global --unset https.proxy
+```
+
+**方式 D：下载 ZIP（完全不用 git）**
+
+浏览器打开：
+
+```text
+https://ghproxy.net/https://github.com/jalonwang132-commits/TradingAgents-astock/archive/refs/heads/main.zip
+```
+
+或者命令行：
+
+```bash
+curl -L -o jalon-astock.zip \
+  https://ghproxy.net/https://github.com/jalonwang132-commits/TradingAgents-astock/archive/refs/heads/main.zip
+unzip jalon-astock.zip
+cd TradingAgents-astock-main
+```
+
+**方式 E：Gitee 导入**
+
+1. 登录 <https://gitee.com>。
+2. 新建仓库 → 「导入已有仓库」→ 填 GitHub 地址。
+3. 等导入完成后，从 Gitee clone：
+
+```bash
+git clone https://gitee.com/<你的用户名>/TradingAgents-astock.git
+```
+
+#### 3.2 PyPI 慢：pip 镜像
+
+常用镜像：
+
+| 镜像 | 地址 |
+|------|------|
+| 清华 TUNA | `https://pypi.tuna.tsinghua.edu.cn/simple` |
+| 阿里云 | `https://mirrors.aliyun.com/pypi/simple/` |
+| 中科大 | `https://pypi.mirrors.ustc.edu.cn/simple/` |
+| 腾讯云 | `https://mirrors.cloud.tencent.com/pypi/simple` |
+| 华为云 | `https://repo.huaweicloud.com/repository/pypi/simple` |
+
+**永久配置（推荐）**：
+
+```bash
+python3 -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+python3 -m pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+
+# 查看是否生效
+python3 -m pip config list
+```
+
+以后所有 `pip install` 都会走清华源。想恢复官方源：
+
+```bash
+python3 -m pip config unset global.index-url
+python3 -m pip config unset global.trusted-host
+```
+
+**只对本次命令生效**：
+
+```bash
+python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+**用环境变量**：
+
+```bash
+# macOS / Linux
+export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+
+# Windows PowerShell
+$env:PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+```
+
+> 如果镜像报 SSL 证书错误，先升级 pip：`python -m pip install --upgrade pip -i ...`。
+> 仍然不行就换一个镜像，或者加 `--trusted-host pypi.tuna.tsinghua.edu.cn`。
+
+#### 3.3 uv 慢：uv 镜像
+
+```bash
+# macOS / Linux
+export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+uv sync
+
+# 或者只对本次生效
+uv sync --default-index https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+Windows PowerShell：
+
+```powershell
+$env:UV_DEFAULT_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
+uv sync
+```
+
+如果 `uv` 还想自动下载 Python，而 Python 下载很慢：
+
+```bash
+# 禁止 uv 下载 Python，改用系统已装的 Python
+export UV_PYTHON_DOWNLOADS=never
+
+# 或者给 python-build-standalone 配镜像（不保证所有镜像都同步）
+export UV_PYTHON_INSTALL_MIRROR=https://ghproxy.net/https://github.com/astral-sh/python-build-standalone/releases/download
+```
+
+> 最稳的做法：先用系统包管理器 / python.org 装好 Python 3.12，
+> 再 `uv venv --python 3.12`，不要让 uv 去下载 Python。
+
+#### 3.4 Homebrew / apt 镜像
+
+**Homebrew（macOS）**：
+
+```bash
+export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
+export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
+export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
+
+# 让当前终端生效后，再安装
+brew update
+brew install python@3.12
+```
+
+想长期生效，把上面四行 `export` 写进 `~/.zshrc`。
+
+**Ubuntu apt**：
+
+换源步骤和系统版本相关，建议直接看清华镜像的对应帮助页：
+<https://mirrors.tuna.tsinghua.edu.cn/help/ubuntu/>。不要照抄过时的
+`sources.list`，Ubuntu 24.04 用的是 `/etc/apt/sources.list.d/ubuntu.sources`。
+
+---
+
+### 4. 获取代码
+
+#### 4.1 用 git clone
+
+```bash
+git clone https://github.com/jalonwang132-commits/TradingAgents-astock.git
+cd TradingAgents-astock
+```
+
+慢的话回到[第 3.1 节](#31-github-clone-慢)换镜像或下 ZIP。
+
+#### 4.2 确认目录对了
+
+```bash
+pwd
+ls
+```
+
+应该能看到：
+
+```text
+pyproject.toml  README.md  tradingagents/  web/  cli/  .env.example
+```
+
+如果 `cd` 进去发现是空的，或者只有一层同名目录，说明解压路径多套了一层，
+再 `cd` 进真正的项目根目录。
+
+---
+
+### 5. 创建虚拟环境
+
+**为什么要虚拟环境**：项目的依赖（pandas、streamlit、langchain 等）版本比较具体，
+装进系统 Python 容易和别的项目打架。虚拟环境就是一个独立的文件夹，删掉即卸载。
+
+#### 5.1 macOS / Linux
+
+```bash
+# 用你实际装的版本，3.12 或 3.13
+python3.12 -m venv .venv
+
+# 激活
+source .venv/bin/activate
+
+# 确认当前 python 指向 .venv
+which python
+python -V
+```
+
+激活后终端提示符前面通常会出现 `(.venv)`。
+
+#### 5.2 Windows PowerShell
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -V
+```
+
+Windows CMD：
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\activate.bat
+```
+
+如果 PowerShell 报「禁止运行脚本」：
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+然后重新执行激活命令。
+
+#### 5.3 用 conda 也行
+
+```bash
+conda create -n jalon python=3.12 -y
+conda activate jalon
+python -V
+```
+
+#### 5.4 常见问题
+
+- `No module named venv` / `ensurepip is not available`：
+  Ubuntu 上装 `sudo apt install -y python3.12-venv`。
+- `python3.12: command not found`：Python 没装好，或者版本号写错，
+  回到[第 2.1 节](#21-安装-python)。
+- 激活后 `python -V` 还是旧版本：确认 `which python` 指向 `.venv/bin/python`。
+
+---
+
+### 6. 安装依赖
+
+> 先确认已经激活虚拟环境（提示符有 `(.venv)`），并且当前目录是项目根目录。
+
+#### 方式 A：pip（最通用）
+
+```bash
+# 1) 升级 pip（走镜像）
+python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 2) 安装项目本身（-e 表示可编辑安装，改代码立即生效）
+python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+如果你的 pip 已经永久配了镜像，可以省略 `-i ...`。
+
+#### 方式 B：uv（更快）
+
+```bash
+# 创建虚拟环境（如果第 5 步已经创建过，可跳过）
+uv venv --python 3.12
+source .venv/bin/activate
+
+# 按 uv.lock 安装，保证版本和作者测试时一致
+UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple uv sync
+```
+
+Windows：
+
+```powershell
+uv venv --python 3.12
+.\.venv\Scripts\Activate.ps1
+$env:UV_DEFAULT_INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
+uv sync
+```
+
+#### 可选：Claude 订阅额度
+
+如果你想让部分节点走自己的 Claude Pro/Max 订阅额度（而不是按 token 计费），
+再装可选依赖：
+
+```bash
+python -m pip install -e ".[agentsdk]" -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 或
+uv sync --extra agentsdk
+```
+
+> 不装不影响主流程。它只是给 `claude_agent_sdk` 这个 provider 用的。
+
+#### 6.1 验证安装
+
+```bash
+python -c "import streamlit, tradingagents; print('deps ok')"
+jalon --help
+```
+
+`jalon --help` 能打印命令列表，说明入口脚本也装好了。
+
+如果 `jalon: command not found`：
+
+- 确认虚拟环境已激活；
+- 重新执行 `python -m pip install -e .`；
+- 或者直接用 `python -m cli.main --help`。
+
+#### 6.2 安装很慢 / 卡在某个包
+
+1. 确认 pip 用的是镜像：`python -m pip config list`。
+2. 单独装卡住的包，看真实报错：
+   ```bash
+   python -m pip install -v "包名" -i https://pypi.tuna.tsinghua.edu.cn/simple
+   ```
+3. 清理缓存再试：
+   ```bash
+   python -m pip cache purge
+   ```
+4. 如果是 `mootdx` / `httpx` 相关冲突，本项目已经把版本钉在可用区间，
+   不要手动升级 `httpx` 到 0.28+，否则会破坏 mootdx。
+
+---
+
+### 7. 配置模型
+
+#### 7.1 复制配置文件
+
+macOS / Linux：
+
+```bash
+cp .env.example .env
+```
+
+Windows：
+
+```powershell
+copy .env.example .env
+```
+
+#### 7.2 填一个模型 Key
+
+用编辑器打开 `.env`：
+
+```bash
+nano .env
+# 或者
+code .env
+```
+
+Windows 可以用 `notepad .env`。
+
+**只填你用的一家即可**，不要把所有 Key 都填上。常用配置：
+
+| 供应商 | Web UI 里选 | `.env` 变量 | 模型示例 |
+|--------|-------------|-------------|----------|
+| DeepSeek | DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-v4-flash` / `deepseek-v4-pro` |
+| MiniMax | MiniMax | `MINIMAX_API_KEY` | `MiniMax-M2.7-highspeed` / `MiniMax-M2.7` |
+| 通义千问 | Qwen | `DASHSCOPE_API_KEY` | `qwen3.5-flash` / `qwen3.6-plus` |
+| 智谱 GLM | GLM | `ZHIPU_API_KEY` | `glm-5.3-flash` / `glm-5.3` |
+| OpenAI | OpenAI | `OPENAI_API_KEY` | `gpt-5.4-mini` / `gpt-5.4` |
+| Anthropic | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` / `claude-opus-4-6` |
+| Gemini | Google | `GOOGLE_API_KEY` | 需额外安装，见排错 |
+| xAI | xAI | `XAI_API_KEY` | `grok-4-1-fast-non-reasoning` |
+| Ollama | Ollama | 不需要 Key | 本机模型名 |
+| 任意 OpenAI 兼容网关 | OpenAI 兼容（自定义 base_url） | `OPENAI_COMPATIBLE_API_KEY` + `BACKEND_URL` | 网关支持的模型 ID |
+
+**最小示例（DeepSeek）**：
+
+```dotenv
+DEEPSEEK_API_KEY=sk-你的key
+```
+
+**最小示例（MiniMax）**：
+
+```dotenv
+MINIMAX_API_KEY=你的key
+```
+
+**OpenAI 兼容中转**：
+
+```dotenv
+OPENAI_COMPATIBLE_API_KEY=你的key
+BACKEND_URL=https://your-relay.example/v1
+```
+
+然后在 Web 侧栏选「OpenAI 兼容（自定义 base_url）」，填模型 ID 和 Base URL。
+
+**Kimi 走 Anthropic 兼容接口**：
+
+```dotenv
 ANTHROPIC_API_KEY=你的kimi-token
-ANTHROPIC_BASE_URL=https://api.kimi.com/coding/   # 或在 config 里写 backend_url
+ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
 ```
 
-注意 **`ANTHROPIC_AUTH_TOKEN` 在本项目里不生效**（那是 Claude Code CLI 的写法），本项目走 langchain，只读 `ANTHROPIC_API_KEY`。v0.4.1 起，用非 Claude 模型名却没配端点会**在启动时**直接告诉你缺什么，而不是等 Anthropic 回一句看不懂的 401。#89
+> 两个都要设。只给 key 不给端点，请求会发到 Anthropic 官方并报 401。
 
-**Q: 导出 PDF 报 `UnicodeEncodeError: 'latin-1' codec can't encode`？**
-你的环境里装了**旧版 `fpdf`（pyfpdf）**，它和本项目用的 `fpdf2` 都以 `fpdf` 名称导入、互相冲突。执行：`pip uninstall -y fpdf && pip install "fpdf2>=2.8.6"`。实在不行可改用「下载 Markdown」导出（零依赖，永远可用）。
+#### 7.3 几个注意点
 
-**Q: Docker 里怎么跑 Web UI？容器启动报 `Invalid value: File does not exist: web/app.py`？**
-用 compose 里的 `web` 服务：`docker compose up web`，然后开 http://localhost:8501 。
+- `.env` 已经在 `.gitignore` 里，**不要提交到 Git**。
+- 改完 `.env` 要**重启** Web / CLI 才生效（`load_dotenv` 只在进程启动时读一次）。
+- 一个 Key 对应一个供应商，不要拿 DeepSeek 的 Key 填到 `OPENAI_API_KEY`。
+- 没有 API Key 也能启动界面，但点「开始分析」会报认证错误；数据源不需要 Key。
 
-报这个错通常是因为命令写成了 `streamlit run web/app.py`——这条**依赖当前工作目录**，工作目录不对就找不到文件。正确的入口是 `tradingagents-web`（即 `web.launch:main`），它按 `__file__` 解析 `app.py` 的绝对路径，跟工作目录无关。本地跑同理，装完后直接 `tradingagents-web` 最稳。
+---
 
-**Q: Docker 里导出 PDF 报「未找到中文字体」？**
-v0.2.12 起 Dockerfile 已内置 `fonts-noto-cjk`，重新 `docker build` 即可。旧镜像可临时 `apt install fonts-noto-cjk`，或改用 Markdown 导出。
+### 8. 启动 Web UI
 
-**Q: Docker 启动报 `[Errno 13] Permission denied: /home/appuser/.tradingagents/cache`？**
-旧版镜像里没预建数据目录，`docker-compose` 的命名卷挂上来时被 Docker 建成 `root` 属主，而容器内进程以 `appuser` 运行、写不进去。v0.2.14 起 Dockerfile 已预建 `/home/appuser/.tradingagents`（cache/logs/memory）并归属 appuser，命名卷会继承该属主。**升级方式**：`git pull` 后 `docker compose build --no-cache` 重建镜像；若想保留旧数据卷可先 `docker run --rm -v tradingagents_data:/d alpine chown -R 1000:1000 /d` 修正属主，否则 `docker volume rm tradingagents_data` 后重建即可。
-
-**Q: 部分分析师报告（情绪/新闻/基本面/政策/游资/解禁）空白不显示？**
-这些报告由对应 Analyst 调用数据工具后生成，**空报告会被自动跳过不显示**。数据源本身是健康的（腾讯/mootdx/同花顺/东财实测出数）；报告为空通常是**所选模型 tool-call 能力弱**（如部分 deepseek/minimax 轻量模型不稳定地调用工具）。建议换用 tool-call 更稳的模型（deepseek-chat / 通义 / GLM-4 / Claude / GPT 等），或重试。
-
-**Q: 为什么没有 `[google]` extra 了？装 Gemini 报 httpx 冲突怎么办？**
-**v0.3.1 起移除了 `[google]` extra**（[#87](https://github.com/simonlin1212/TradingAgents-astock/issues/87)）。原因：`langchain-google-genai>=4.0.0` 要求 `google-genai>=1.53.0`，而该区间内**每一个** google-genai 版本都要求 `httpx>=0.28.1`；mootdx（核心 A 股数据源）钉死 `httpx>=0.25,<0.26`。**没有任何版本组合能同时满足，冲突是结构性的。**
-
-真正的问题是：**uv 构建的是覆盖所有 extra 的 universal lock**，所以只要这个 extra 存在，`uv sync` 就对**所有人**失败——包括从不用 Gemini 的用户。把 extra 留空更糟（`pip install .[google]` 会静默什么都不装，用户以为装好了）。所以直接移除，并在 `google_client.py` 导入失败时给出可直接执行的安装命令。
-
-需要 Gemini 时显式安装（**mootdx 取行情走 TCP 协议、运行时根本不 import httpx**，所以抬高 httpx 实测不影响取数）：
+确认虚拟环境已激活，在项目根目录执行：
 
 ```bash
-pip install --no-deps "langchain-google-genai>=4.0.0"
-pip install "google-genai>=1.53.0" "httpx>=0.28.1"
+jalon-web
 ```
 
-或把 Gemini 与数据层分到不同 venv。最省心是用 DeepSeek / MiniMax / 通义 / OpenAI 兼容中继等，完全不涉及这个冲突。
+等价命令：
 
-另澄清：**litellm / mcp 不是本项目的依赖**——报错里若提到它们，是你环境里其它包带来的。
+```bash
+tradingagents-web
+# 或者
+python -m streamlit run web/app.py
+```
 
-**Q: 不进 CLI 交互，怎么批量跑多只标的、拿到和 CLI 一样的完整报告？**
-看 `examples/run_cases.py`：它复用 CLI 的 `save_report_to_disk()`，每只标的输出与 CLI 一致的 `complete_report.md`（分析师 / 研究 / 交易 / 风险 / 组合五个分区）+ 一份字段齐全的 `summary.json`。用法：`uv run python examples/run_cases.py`（跑全部）或 `uv run python examples/run_cases.py 688017`（单只）；改 `build_config()` 切换 provider/model。
+终端会输出类似：
+
+```text
+Local URL: http://localhost:8501
+Network URL: http://192.168.x.x:8501
+```
+
+浏览器打开 <http://localhost:8501>。
+
+> 首次启动如果 Streamlit 问邮箱，直接回车跳过即可。
+> 终端不要关，关了服务就停了。
+
+#### 8.1 端口被占用
+
+```bash
+python -m streamlit run web/app.py --server.port 8502
+```
+
+然后访问 <http://localhost:8502>。
+
+#### 8.2 浏览器没自动打开
+
+手动访问 <http://127.0.0.1:8501>。如果还是打不开：
+
+- 确认终端没有报错、进程还在；
+- 确认端口没被防火墙拦；
+- 换 `127.0.0.1` 而不是 `localhost` 试试。
+
+#### 8.3 停止服务
+
+在运行终端按 `Ctrl + C`。
+
+---
+
+### 9. 第一次分析怎么点
+
+打开 Web 后，左侧是工作台，右侧是主区域。
+
+1. **选模型**：点「⚙️ 模型配置」，选供应商、快速模型、深度模型。
+   第一次建议用 DeepSeek 或 MiniMax 的快模型，便宜、够用。
+2. **填股票**：输入 6 位代码（如 `600519`）或中文名（如 `贵州茅台`）。
+3. **选分析日期**：默认今天；也可以选历史日期做复盘。
+4. **选数据起始日期**：默认本月第一天。想做月度复盘，就设到月初；
+   想看更长周期，就往前调。
+5. **点「开始分析」**。
+6. 右侧会显示实时进度：7 位分析师 → 质量门控 → 多空辩论 → 交易员 →
+   三方风控 → 组合决策。
+7. 跑完后可以展开每一份报告，底部有「下载 Markdown」「下载 PDF」。
+8. 历史记录在左侧，点一下可以回看之前的分析。
+
+**跑一轮要多久？**
+
+取决于模型和辩论轮数。默认 1 轮辩论、7 位分析师，大约 30~50 次 LLM 调用。
+快模型通常几分钟；推理模型可能十几分钟。**不要中途关终端**。
+
+**想更快 / 更便宜**：
+
+- 减少参与的分析师（投研团队页可以关掉部分角色）；
+- 辩论轮数设为 1；
+- 快速模型用便宜的 flash / highspeed 档；
+- 深度模型只在研究经理和组合经理上用强模型。
+
+---
+
+### 10. 启动 CLI
+
+```bash
+jalon                 # 交互式分析
+jalon analyze         # 同上（默认命令）
+jalon performance     # 决策绩效统计（零 LLM 调用）
+jalon --help          # 查看所有选项
+```
+
+兼容入口：
+
+```bash
+tradingagents
+tradingagents performance
+```
+
+也可以直接跑一个最小脚本：
+
+```bash
+python main.py
+```
+
+`main.py` 默认是 MiniMax 示例；用 DeepSeek 的话，把里面 `config` 换成注释里的
+DeepSeek 配置，并确认 `.env` 里有对应 Key。
+
+---
+
+### 11. 停止、更新、卸载
+
+#### 停止
+
+- Web：终端 `Ctrl + C`。
+- CLI：按提示退出，或 `Ctrl + C`。
+
+#### 更新代码
+
+```bash
+git pull
+python -m pip install -e .    # 依赖有变化时重跑
+```
+
+用 uv 的话：
+
+```bash
+git pull
+uv sync
+```
+
+#### 卸载
+
+```bash
+deactivate                    # 退出虚拟环境
+rm -rf .venv                  # 删除虚拟环境（项目依赖就没了）
+```
+
+用户数据在 `~/.tradingagents/`，想彻底清掉再：
+
+```bash
+rm -rf ~/.tradingagents
+```
+
+> 删除前确认里面没有你想保留的历史报告和记忆日志。
+
+---
+
+### 12. 常见问题排错
+
+#### Q1：`python3 --version` 是 3.9，装不上
+
+说明你用的是系统自带 Python。装 3.12 后用 `python3.12` 建虚拟环境：
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+```
+
+#### Q2：`pip install -e .` 报 `requires a different Python: 3.9.6 not in '>=3.10'`
+
+`pip` 绑定到了旧 Python。用 `python3.12 -m pip`，不要直接敲 `pip`：
+
+```bash
+python3.12 -m pip install -e .
+```
+
+#### Q3：`git clone` 卡住 / `early EOF` / `RPC failed`
+
+换浅克隆或镜像：
+
+```bash
+git clone --depth 1 https://github.com/jalonwang132-commits/TradingAgents-astock.git
+# 或
+git clone https://ghproxy.net/https://github.com/jalonwang132-commits/TradingAgents-astock.git
+```
+
+还不行就下 ZIP，见[第 3.1 节](#31-github-clone-慢)。
+
+#### Q4：`pip install` 很慢，一直转圈
+
+配置镜像：
+
+```bash
+python -m pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+python -m pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
+```
+
+然后重试。确认生效：`python -m pip config list`。
+
+#### Q5：`jalon: command not found`
+
+- 虚拟环境没激活：`source .venv/bin/activate`；
+- 没装项目：`python -m pip install -e .`；
+- 直接用模块方式：`python -m cli.main --help`。
+
+#### Q6：`Address already in use` / 8501 被占用
+
+```bash
+python -m streamlit run web/app.py --server.port 8502
+```
+
+#### Q7：启动报 `ModuleNotFoundError: No module named 'tradingagents'`
+
+在错误的目录启动了。`cd` 到项目根目录（有 `pyproject.toml` 的那一层），
+或者重新 `python -m pip install -e .`。
+
+#### Q8：点「开始分析」报没有 API Key
+
+`.env` 里没填对应供应商的变量，或者填错了名字。对照[第 7.2 节](#72-填一个模型-key)
+检查，改完**重启** Web。
+
+#### Q9：报告写到一半就断了
+
+撞到输出 token 上限，不是上下文超长。调大：
+
+```dotenv
+TRADINGAGENTS_MAX_TOKENS=16000
+```
+
+或者在 config 里设 `"max_tokens": 16000`。
+
+#### Q10：部分分析师报告是空的
+
+通常是模型 tool-call 能力弱，没成功调用数据工具。换 tool-call 更稳的模型
+（DeepSeek / 通义 / GLM / Claude / GPT），或者重试。空报告会被自动跳过，
+不会显示成空白卡片。
+
+#### Q11：PDF 导出报中文字体错误
+
+系统缺中文字体。macOS 一般自带；Linux 装：
+
+```bash
+sudo apt install -y fonts-noto-cjk
+```
+
+或者直接用「下载 Markdown」，零字体依赖。也可以指定字体：
+
+```bash
+export TRADINGAGENTS_PDF_FONT=/path/to/your/font.ttf
+```
+
+#### Q12：东方财富接口返回空 / 被限流
+
+东财风控比较严。批量分析时放慢：
+
+```bash
+export EM_MIN_INTERVAL=2
+```
+
+只影响东财，不影响 mootdx / 腾讯 / 新浪。
+
+#### Q13：mootdx 连不上
+
+mootdx 走 TCP 7709，部分公司网络 / 防火墙会拦。换网络、关代理，或者等一会儿再试。
+其它数据源（腾讯 / 新浪 / 东财）不依赖 mootdx，部分报告仍可生成。
+
+#### Q14：Windows 激活虚拟环境报「禁止运行脚本」
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+然后重新 `.\.venv\Scripts\Activate.ps1`。
+
+#### Q15：装 Gemini 报 httpx 冲突
+
+`mootdx` 需要 `httpx<0.26`，而新版 `langchain-google-genai` 需要 `httpx>=0.28.1`，
+二者结构性冲突。本项目默认不装 Gemini。确实要用，单独装：
+
+```bash
+python -m pip install --no-deps "langchain-google-genai>=4.0.0"
+python -m pip install "google-genai>=1.53.0" "httpx>=0.28.1"
+```
+
+> mootdx 取行情走通达信 TCP 协议，运行时并不 import httpx，所以把 httpx 抬高到
+> 0.28+ 实测不影响取数；但这毕竟绕过了依赖约束，升级前建议先备份虚拟环境。
+
+更省心的做法是用 DeepSeek / MiniMax / 通义 / GLM / OpenAI 兼容网关。
+
+#### Q16：想换端口 / 局域网访问
+
+```bash
+python -m streamlit run web/app.py --server.port 8502 --server.address 0.0.0.0
+```
+
+> 局域网访问会把界面暴露给同网段设备，确认你信任这个网络再开。
 
 ---
 
 ## 项目结构
 
-```
-TradingAgents-Astock/
-├── tradingagents/
-│   ├── agents/
-│   │   ├── analysts/          # 7 个分析师
-│   │   │   ├── market_analyst.py
-│   │   │   ├── social_media_analyst.py
-│   │   │   ├── news_analyst.py
-│   │   │   ├── fundamentals_analyst.py
-│   │   │   ├── policy_analyst.py        # A 股特化
-│   │   │   ├── hot_money_tracker.py     # A 股特化
-│   │   │   └── lockup_watcher.py        # A 股特化
-│   │   ├── researchers/       # Bull / Bear 研究员
-│   │   ├── risk_mgmt/         # 激进 / 保守 / 中立 辩手
-│   │   ├── managers/          # Research Manager + Portfolio Manager
-│   │   ├── trader/            # Trader（A 股交易约束）
-│   │   └── utils/             # 状态定义、工具函数
+```text
+TradingAgents-astock/
+├── tradingagents/              # 核心框架
+│   ├── agents/                 # 7 位分析师、研究员、风控、经理
+│   │   ├── analysts/
+│   │   ├── researchers/
+│   │   ├── risk_mgmt/
+│   │   ├── managers/
+│   │   └── trader/
 │   ├── dataflows/
-│   │   ├── a_stock.py         # A 股数据 vendor（直连 HTTP API，零第三方库）
-│   │   ├── interface.py       # 数据接口抽象层
+│   │   ├── a_stock.py          # A 股数据 vendor（直连 HTTP）
+│   │   ├── interface.py        # 数据接口抽象
 │   │   └── ...
 │   └── graph/
-│       ├── trading_graph.py   # 主入口：TradingAgentsGraph
-│       ├── setup.py           # LangGraph 拓扑定义
-│       ├── propagation.py     # 状态初始化与传播
-│       ├── reflection.py      # 交易反思（CSI 300 基准）
-│       └── conditional_logic.py
-├── web/
-│   ├── app.py                 # Streamlit 主入口
-│   ├── runner.py              # 后台线程运行分析
-│   ├── progress.py            # 线程安全进度追踪
-│   ├── history.py             # 历史记录扫描
-│   ├── pdf_export.py          # PDF 报告生成
-│   ├── launch.py              # CLI 启动器
-│   └── components/            # UI 组件
-│       ├── sidebar.py         # 侧边栏（输入 + 历史）
-│       ├── progress_panel.py  # 实时进度面板
-│       └── report_viewer.py   # 报告展示
-├── test_astock.py             # E2E 集成测试
-├── CHANGES_FROM_UPSTREAM.md   # 与上游的完整改动记录
-├── NOTICE                     # Apache 2.0 归属声明
-├── LICENSE                    # Apache 2.0 许可证
-└── pyproject.toml             # 包定义与依赖
+│       ├── trading_graph.py    # 主入口 TradingAgentsGraph
+│       ├── setup.py            # LangGraph 拓扑
+│       ├── propagation.py
+│       └── reflection.py
+├── web/                        # Streamlit Web UI
+│   ├── app.py                  # 主入口
+│   ├── branding.py             # 品牌常量（名字/作者/仓库/版本）
+│   ├── runner.py               # 后台线程运行分析
+│   ├── progress.py             # 进度追踪
+│   ├── history.py              # 历史记录
+│   ├── pdf_export.py           # PDF / Markdown 导出
+│   ├── launch.py               # jalon-web 启动器
+│   └── components/
+│       ├── sidebar.py          # 侧栏
+│       ├── progress_panel.py   # 进度面板
+│       ├── report_viewer.py    # 报告展示
+│       └── team_view.py        # 投研团队页
+├── cli/                        # 命令行入口
+│   ├── main.py
+│   ├── announcements.py
+│   └── static/welcome.txt
+├── main.py                     # 最小可运行示例
+├── pyproject.toml
+├── NOTICE                      # Apache-2.0 归属声明
+└── LICENSE
 ```
 
 ---
 
-## 致谢
+## 常用配置
 
-本项目基于 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) 开源项目进行 A 股特化改造。感谢原作者的出色工作和 Apache 2.0 开源精神。
+所有配置通过传给 `TradingAgentsGraph(config=...)` 的字典覆盖，只写要改的键，
+其余用 `tradingagents/default_config.py` 的默认值。
 
-**原始论文**：[TradingAgents: Multi-Agents LLM Financial Trading Framework](https://arxiv.org/abs/2412.20138)
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `llm_provider` | `"openai"` | `deepseek` / `minimax` / `qwen` / `glm` / `openai` / `anthropic` / `google` / `xai` / `ollama` / `openai_compatible` |
+| `deep_think_llm` | `"gpt-5.4"` | 研究经理 + 组合经理用的强模型 |
+| `quick_think_llm` | `"gpt-5.4-mini"` | 分析师 / 交易员 / 风控用的快模型 |
+| `backend_url` | `None` | 自定义 API 端点 / 中转网关；也可用 `.env` 的 `BACKEND_URL` |
+| `max_tokens` | `None` | 单次回复最大输出 token；报告截断时调大 |
+| `output_language` | `"Chinese"` | 报告输出语言 |
+| `market_lookback_days` | `None` | 技术分析回溯天数，Web 由「数据起始日期」自动算 |
+| `max_debate_rounds` | `1` | 多空辩论轮数（1~5） |
+| `max_risk_discuss_rounds` | `1` | 风险辩论轮数（1~5） |
+| `role_llms` | `{}` | 给单个角色指定不同 provider / model |
+| `selected_analysts` | 全部 7 位 | 本次参与的分析师 |
+| `agent_prompts` | `{}` | 按角色覆盖提示词 |
+| `strategy_packs` | `[]` | 「我的战法」策略包 |
+| `checkpoint_enabled` | `False` | 启用 SQLite 断点续跑 |
+| `llm_timeout` | `150` | 单次 LLM 请求超时（秒） |
+| `llm_max_retries` | `3` | 应用层重试次数（OpenAI 兼容 provider） |
+| `EM_MIN_INTERVAL` | `1.0` | 东财请求最小间隔（环境变量，批量时调大） |
+
+更完整的配置说明见 `tradingagents/default_config.py`。
+
+> 上表是库 / CLI 的默认值。**Web 侧栏首次默认选 MiniMax**，可以在「⚙️ 模型配置」里
+> 改成 DeepSeek、通义等；改完会记到 `~/.tradingagents/llm_config.json`，下次自动恢复。
 
 ---
 
-## 项目定位
+## 投研团队与「我的战法」
 
-**这是一个框架的工程实现，不是一个投资产品。**
+侧栏切到「🧑‍💼 投研团队」可以：
 
-- **它是什么**：[TradingAgents 论文](https://arxiv.org/abs/2412.20138)（TauricResearch）多 Agent 架构的 A 股工程实现，用于研究与教学——研究多 Agent 辩论在金融文本上的行为、A 股数据源如何接入、结构化输出如何落地。
-- **它不是什么**：不是投资顾问、不是荐股软件、不提供任何投资服务。本仓库不发布针对具体证券的分析报告、评级或买卖建议；`examples/` 下只有可自行运行的脚本，没有任何预生成的个股结论。
-- **模型和数据都是你自己的**：你配置自己的 LLM API key，在自己的机器上运行，产出的内容归你所有、由你判断、由你负责。项目本身不托管服务、不代为分析、不接触你的运行结果。
-- **不产出可执行价位**：框架内**没有**建仓价 / 止损位 / 仓位 / 目标价这类输出——不是默认关闭，是代码里就没有。Trader 与 Portfolio Manager 只给方向、评级与理由。需要这类能力的使用者可以自行 fork 添加（Apache-2.0 允许），并自行承担相应责任、自行确认所在司法辖区的资质要求。
+- **看完整团队**：7 位分析师 → 质量门控 → 多空辩论 → 研究经理 → 交易员 →
+  激进 / 保守 / 中立风控 → 组合经理，共 16 个角色；运行时实时点亮状态。
+- **改提示词**：点任意角色卡片，直接编辑 system / user 提示词，保存后下一次分析生效；
+  页面会预览真正发出去的全文，不是另一套模板。
+- **调配团队**：选择本次参与的分析师、辩论轮数（1~5）。
+- **写「我的战法」**：新增策略包，填名称、作用角色和规则，例如
+  「RSI(14) > 80 且 MACD 死叉 → 偏空，置信度 0.8」。战法会追加到对应角色的
+  提示词末尾，和内置提示词分开保存，可启用 / 停用 / 删除。
 
-> **⚠️ 免责声明**
->
-> - 本系统产出的所有内容均由 AI 自动生成，可能存在错误或偏差
-> - 本项目不构成任何投资建议；投资决策请咨询持有中国证监会颁发资质的专业机构
-> - 作者不对使用本工具产生的任何投资损失承担责任
-> - 股市有风险，投资需谨慎
+配置会写到 `~/.tradingagents/team_config.json`，不污染仓库。
+
+> 注意：当前 `get_indicators` 只支持固定指标集。你在战法里写 KDJ、OBV、ADX 等，
+> 工具也取不到数；需要硬性判定的规则，建议后续扩展指标或做成代码级规则引擎。
 
 ---
 
-## License
+## 数据与隐私
 
-[Apache License 2.0](./LICENSE)
+- **行情数据**：从 mootdx / 腾讯 / 东财 / 新浪 / 同花顺 / 财联社 / 百度的公开接口
+  直接拉取，不经过本项目的任何服务器。
+- **模型请求**：只发给你在 `.env` 里配置的 LLM 供应商（或你自己的中转网关）。
+  如果你用的是第三方中转，请自行确认对方的隐私政策。
+- **本地数据**：历史记录、缓存、记忆日志在 `~/.tradingagents/`；导出的报告由你决定放哪。
+- **关闭遥测**：Streamlit 的使用统计已在本项目 `.streamlit/config.toml` 中关闭；
+  CLI 默认不请求任何公告接口。
+- **不要提交 `.env`**：里面是你的 API Key。仓库的 `.gitignore` 已经排除它。
 
-本项目是 TauricResearch/TradingAgents 的 fork，继承 Apache 2.0 许可证。详见 [NOTICE](./NOTICE)。
+---
 
-**作者：** Simon 林 · X [@linsizhen](https://x.com/linsizhen) · 邮箱：[simonlin0423@gmail.com](mailto:simonlin0423@gmail.com)
-### 用个人 Claude 订阅额度（可选，v0.4.0 新增）
+## 许可与归属
 
-让节点经 Claude Agent SDK 走你**个人 Claude Pro/Max 订阅额度**，而不是按 token 计费的 Anthropic API。
+本项目以 **Apache License 2.0** 发布，完整许可证见 [LICENSE](./LICENSE)。
 
-> 与内置 `anthropic` provider 的区别：`anthropic` 走 `ANTHROPIC_API_KEY` = **按 token 计费**；本 provider 走本机已登录的 `claude` CLI = **消耗订阅额度，不产生 API 账单**。
->
-> 仅供**个人自用**——它消耗的是你自己账号的订阅额度。把它做成给别人用的产品需要 Anthropic 授权，不在本项目范围内。
+本仓库是在开源 TradingAgents 生态基础上的独立衍生版本。原始版权、修改声明和
+完整归属信息保留在 [NOTICE](./NOTICE) 中，这是 Apache-2.0 的要求，也是对我所
+使用的开源工作的基本尊重。
 
-#### 1. 准备
+> 本项目与原始项目的维护者没有隶属关系，也未获得其背书。原始项目的名称仅用于
+> 归属说明，不代表任何官方关联。
 
-```bash
-pip install -e ".[agentsdk]"
+---
 
-# 本机 claude 已登录即可；headless / CI 环境需要显式 token：
-claude setup-token          # 输出的 token 设为 CLAUDE_CODE_OAUTH_TOKEN
-
-# 不打算保留付费降级的话，顺手清掉（可选）
-unset ANTHROPIC_API_KEY
-```
-
-关于 `ANTHROPIC_API_KEY`：它的优先级高于订阅凭据，**但不会泄进 Agent SDK 子进程**——客户端在子进程环境里已把它显式置空，订阅额度照常生效。父进程保留它是为了让 `anthropic` 仍能作为撞额度后的降级 provider（否则就成死结：留着启动被拦、删掉又在真要降级时认证失败）。启动时只告警不中止。
-
-#### 2. 开启
-
-Web UI 侧栏「个人 Claude 订阅覆盖 (Agent SDK)」三档，或在 config 里设：
-
-```python
-config["deep_think_provider_override"]  = "claude_agent_sdk"   # 仅深度节点
-config["quick_think_provider_override"] = "claude_agent_sdk"   # 再加这条 = 全节点
-config["agent_sdk_model"]       = "opus"      # 深度节点
-config["agent_sdk_quick_model"] = "sonnet"    # 分析师节点
-```
-
-**模型建议填别名 `opus` / `sonnet`**——`claude` CLI 的别名恒指向最新模型，写死 `claude-opus-4-8` 这类完整 id 会随版本迭代过期。完整 id 同样支持。
-
-#### 3. 两条边界
-
-- **额度而非 token**：订阅是按额度限流的。「所有节点」会把 7 个分析师 + 多空/交易员/风险辩手全压上去，跑几轮就可能撞上限——所以 `agent_sdk_quick_model` 默认给的是更省的 `sonnet`。撞额度会自动降级到你配的付费 provider（可用 `agent_sdk_fallback_provider` / `agent_sdk_fallback_model` 指定）。
-- **凭据失效不降级**：OAuth token 过期时**直接报错中止**，不会静默降级到计费 provider——你开订阅模式就是为了避免账单，悄悄开始计费比报错更糟。报错里会给出 `claude setup-token` 的修复步骤。
-
-#### 依赖说明
-
-`[agentsdk]` 的依赖链是 `claude-agent-sdk → mcp → httpx2`，**不碰 httpx**，与 mootdx 的 `httpx<0.26` 无冲突（已 `uv lock` 实测）——和 #87 里被移除的 `[google]` 情况不同，不需要单开 venv。
+<p align="center">
+  <sub>Jalon A股投研工作台 · 本地部署 · 仅供学习研究</sub>
+</p>

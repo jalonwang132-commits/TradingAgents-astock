@@ -1,20 +1,33 @@
-TradingAgents-Astock
-Copyright 2026 Simon (github.com/simonlin1212)
+Jalon A股投研工作台 (jalon-astock)
+Copyright 2026 JalonWang (github.com/jalonwang132-commits)
 
-This product is a fork of TradingAgents, originally developed by
-TauricResearch (https://github.com/TauricResearch/TradingAgents),
-licensed under the Apache License, Version 2.0.
+This product is an independent fork of TradingAgents-Astock, which is itself a
+fork of TradingAgents. The original works are licensed under the Apache
+License, Version 2.0.
 
-Original work Copyright 2024-2025 TauricResearch
-Licensed under the Apache License, Version 2.0
-(https://www.apache.org/licenses/LICENSE-2.0)
+Original fork:
+  TradingAgents-Astock
+  Copyright 2026 Simon (github.com/simonlin1212)
+
+Upstream framework:
+  TradingAgents, originally developed by TauricResearch
+  (https://github.com/TauricResearch/TradingAgents)
+  Original work Copyright 2024-2025 TauricResearch
+  Licensed under the Apache License, Version 2.0
+  (https://www.apache.org/licenses/LICENSE-2.0)
 
 Modifications in this fork include:
-- A-stock (China mainland) data layer using mootdx, Tencent Finance, and akshare
-- Three new A-stock specific analyst agents (Policy, Hot Money, Lockup)
+- Rebranded application shell (Web UI, CLI, package metadata) for personal use
+- A-stock (China mainland) data layer using mootdx, Tencent Finance, Eastmoney,
+  Sina, and other direct HTTP sources (akshare dependency removed)
+- Three A-stock specific analyst agents (Policy, Hot Money, Lockup)
 - A-stock trading constraints (T+1, price limits, lot sizes) in Trader and PM
 - Chinese language output support
 - CSI 300 benchmark for alpha calculation (replacing SPY)
 - Various prompt and pipeline adaptations for A-share market specifics
 
-See CHANGES_FROM_UPSTREAM.md for the full list of modifications.
+This fork is not affiliated with, sponsored by, or endorsed by TauricResearch or
+the maintainers of TradingAgents-Astock. Names of the original projects are
+retained here only for attribution and license compliance.
+
+See CHANGES_FROM_UPSTREAM.md for the full list of technical modifications.

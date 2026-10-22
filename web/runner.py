@@ -9,8 +9,11 @@ from typing import Any
 
 from web.history import clear_incomplete_task, record_incomplete_task
 from web.progress import PIPELINE_STAGES, ProgressTracker
+from web.run_registry import bind_run_thread, release_run
 from web.stock_display import normalize_report_state_mentions, normalize_stock_mentions
 from web.team_state import derive_role_states
+from web.user_context import activate
+from web.user_paths import UserPaths
 
 
 _REPORT_KEY_TO_STAGE = {s["report_key"]: s["id"] for s in PIPELINE_STAGES}
@@ -188,8 +191,16 @@ def run_analysis_in_thread(
     trade_date: str,
     config: dict,
     tracker: ProgressTracker,
+    *,
+    paths: UserPaths | None = None,
+    lease_token: str | None = None,
 ) -> threading.Thread:
-    """Launch the pipeline in a daemon thread. Returns the thread handle."""
+    """Launch the pipeline in a daemon thread. Returns the thread handle.
+
+    ``paths`` 把工作线程绑定到发起分析的账户；不传则沿用旧单用户行为（CLI/测试）。
+    ``lease_token`` 在线程结束时释放并发租约——无论成功、失败、停止还是异常，
+    都必须释放，否则这个用户会被自己卡住。
+    """
     tracker.ticker = ticker
     tracker.trade_date = trade_date
     tracker.is_running = True
@@ -218,24 +229,34 @@ def run_analysis_in_thread(
 
     def _target() -> None:
         try:
-            _run(ticker, trade_date, config, tracker)
-        except Exception as exc:
-            if tracker.stop_requested:
-                try:
-                    _discard_stopped_run(ticker, trade_date, config, tracker)
-                except Exception:
-                    traceback.print_exc()
-                return
-            traceback.print_exc()
-            record_incomplete_task(
-                ticker,
-                trade_date,
-                status="error",
-                error=str(exc),
-                completed_stages=tracker.completed_stages,
-            )
-            tracker.mark_error(str(exc))
+            if paths is not None:
+                # 每个线程独立 contextvar：A 的报告/断点/缺失数据不会落到 B 的目录。
+                activate(paths)
+            try:
+                _run(ticker, trade_date, config, tracker)
+            except Exception as exc:
+                if tracker.stop_requested:
+                    try:
+                        _discard_stopped_run(ticker, trade_date, config, tracker)
+                    except Exception:
+                        traceback.print_exc()
+                    return
+                traceback.print_exc()
+                record_incomplete_task(
+                    ticker,
+                    trade_date,
+                    status="error",
+                    error=str(exc),
+                    completed_stages=tracker.completed_stages,
+                )
+                tracker.mark_error(str(exc))
+        finally:
+            if lease_token:
+                release_run(lease_token)
+                # session_state 只在 Streamlit 线程可安全访问；工作线程里不碰它。
+                # 遗留 token 由 app.py 在下次开始时作为 stale lease 释放（幂等）。
 
     t = threading.Thread(target=_target, daemon=True)
+    bind_run_thread(lease_token, t)
     t.start()
     return t

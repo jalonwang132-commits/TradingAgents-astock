@@ -52,6 +52,7 @@
 - [项目结构](#项目结构)
 - [常用配置](#常用配置)
 - [投研团队与「我的战法」](#投研团队与我的战法)
+- [多用户模式（给朋友用）](#多用户模式给朋友用)
 - [数据与隐私](#数据与隐私)
 - [许可与归属](#许可与归属)
 
@@ -871,6 +872,11 @@ Network URL: http://192.168.x.x:8501
 
 浏览器打开 <http://localhost:8501>。
 
+> **首次启动会要求创建一个 owner 账户**（用户名 + 密码，至少 8 位）。owner 继续
+> 使用旧的 `~/.tradingagents/` 目录，CLI 与 Web 看到同一份历史。之后朋友要注册，
+> 必须由 owner 在「👤 账户 → 管理 → 邀请码」里生成邀请码。
+> 多用户部署、公网 TLS、备份与权限边界见 [MULTIUSER.md](./MULTIUSER.md)。
+>
 > 首次启动如果 Streamlit 问邮箱，直接回车跳过即可。
 > 终端不要关，关了服务就停了。
 
@@ -900,8 +906,10 @@ python -m streamlit run web/app.py --server.port 8502
 
 打开 Web 后，左侧是工作台，右侧是主区域。
 
-1. **选模型**：点「⚙️ 模型配置」，选供应商、快速模型、深度模型。
+1. **选模型并保存自己的 API Key**：点「⚙️ 模型配置」，选供应商、快速模型、
+   深度模型，然后在同面板的「API Key」里粘贴并保存（或到「👤 账户 → API Key」）。
    第一次建议用 DeepSeek 或 MiniMax 的快模型，便宜、够用。
+   普通成员不会借用服务器 `.env` 里 owner 的 Key；没配 Key 会被「开始分析」拦住。
 2. **填股票**：输入 6 位代码（如 `600519`）或中文名（如 `贵州茅台`）。
 3. **选分析日期**：默认今天；也可以选历史日期做复盘。
 4. **选数据起始日期**：默认本月第一天。想做月度复盘，就设到月初；
@@ -1129,7 +1137,8 @@ python -m pip install "google-genai>=1.53.0" "httpx>=0.28.1"
 python -m streamlit run web/app.py --server.port 8502 --server.address 0.0.0.0
 ```
 
-> 局域网访问会把界面暴露给同网段设备，确认你信任这个网络再开。
+> 局域网访问会把登录页暴露给同网段设备。v0.7.0 起有账户登录，但仍建议只在你
+> 信任的网络开启；公网部署请按 [MULTIUSER.md](./MULTIUSER.md) 加 TLS 反向代理。
 
 ---
 
@@ -1154,15 +1163,21 @@ TradingAgents-astock/
 │       ├── propagation.py
 │       └── reflection.py
 ├── web/                        # Streamlit Web UI
-│   ├── app.py                  # 主入口
+│   ├── app.py                  # 主入口（认证门 → 业务页）
 │   ├── branding.py             # 品牌常量（名字/作者/仓库/版本）
-│   ├── runner.py               # 后台线程运行分析
+│   ├── user_paths.py           # 每用户目录布局（owner 复用旧根目录）
+│   ├── user_context.py         # 线程级用户上下文（ContextVar）
+│   ├── secrets_store.py        # 每用户 API Key（0600）
+│   ├── run_registry.py         # 并发租约 / 每日次数 / 磁盘配额
+│   ├── auth/                   # 账户、密码、邀请码、限流、审计、登录门
+│   ├── runner.py               # 后台线程运行分析（绑定用户目录 + 释放租约）
 │   ├── progress.py             # 进度追踪
-│   ├── history.py              # 历史记录
+│   ├── history.py              # 历史记录（当前账户）
 │   ├── pdf_export.py           # PDF / Markdown 导出
 │   ├── launch.py               # jalon-web 启动器
 │   └── components/
-│       ├── sidebar.py          # 侧栏
+│       ├── sidebar.py          # 侧栏（模型 / API Key / 账户入口）
+│       ├── account_view.py     # 我的账户 + owner 管理
 │       ├── progress_panel.py   # 进度面板
 │       ├── report_viewer.py    # 报告展示
 │       └── team_view.py        # 投研团队页
@@ -1223,10 +1238,47 @@ TradingAgents-astock/
   「RSI(14) > 80 且 MACD 死叉 → 偏空，置信度 0.8」。战法会追加到对应角色的
   提示词末尾，和内置提示词分开保存，可启用 / 停用 / 删除。
 
-配置会写到 `~/.tradingagents/team_config.json`，不污染仓库。
+配置写到**当前账户**的 `team_config.json`（owner 在 `~/.tradingagents/`，成员在
+`~/.tradingagents/users/<id>/`），不污染仓库，也不会串到别人账户。
 
 > 注意：当前 `get_indicators` 只支持固定指标集。你在战法里写 KDJ、OBV、ADX 等，
 > 工具也取不到数；需要硬性判定的规则，建议后续扩展指标或做成代码级规则引擎。
+
+---
+
+## 多用户模式（给朋友用）
+
+应用默认是「一个人、一台机器」的本地工具。多用户模式把 Web 变成「一个 owner +
+若干受邀朋友」的共享工作台，每个人独占自己的历史、模型选择和 API Key。
+
+### 怎么开
+
+不需要额外开关：**首次启动创建 owner 就是多用户模式**。owner 在
+「👤 账户 → 管理 → 邀请码」生成邀请码，朋友在登录页「注册」里填码即可。
+
+### 隔离什么
+
+- 历史报告、未完成任务、断点、记忆日志、缺失数据；
+- 模型选择、团队编排、提示词覆盖、「我的战法」；
+- API Key（每人一份，页面只显示末 4 位）；
+- 普通成员不能使用 owner 的 `.env` Key，也不能用 owner 的 Claude 订阅额度。
+
+owner 复用旧的 `~/.tradingagents/`（CLI 与 Web 共享历史），朋友在
+`~/.tradingagents/users/<uid>/`。
+
+### 防护
+
+邀请码注册（默认 72 小时 / 1 次）、账户数上限、登录限流、每用户 1 个并发分析、
+全服务器并发上限、每人每日次数、每人磁盘配额。账户库损坏时会拒绝重建 owner，
+避免被接管。
+
+### 部署
+
+- **不要**把 8501 直接暴露公网；前面用 Caddy/nginx 做 TLS，应用只监听 `127.0.0.1`。
+- 刷新页面会掉登录（Streamlit 会话机制）；想免登录可用反向代理
+  trusted-header 模式。
+- 完整协议、nginx/Caddy/systemd 配置、备份/恢复/运维手册见
+  **[MULTIUSER.md](./MULTIUSER.md)**。
 
 ---
 
@@ -1234,9 +1286,12 @@ TradingAgents-astock/
 
 - **行情数据**：从 mootdx / 腾讯 / 东财 / 新浪 / 同花顺 / 财联社 / 百度的公开接口
   直接拉取，不经过本项目的任何服务器。
-- **模型请求**：只发给你在 `.env` 里配置的 LLM 供应商（或你自己的中转网关）。
+- **模型请求**：只发给你（或你的账户）配置的 LLM 供应商（或你自己的中转网关）。
   如果你用的是第三方中转，请自行确认对方的隐私政策。
-- **本地数据**：历史记录、缓存、记忆日志在 `~/.tradingagents/`；导出的报告由你决定放哪。
+- **本地数据**：历史记录、缓存、记忆日志在 `~/.tradingagents/`（多用户模式下成员
+  各自在 `users/<uid>/`）；导出的报告由你决定放哪。
+- **多用户密钥**：每个账户的 API Key 存在自己的 `secrets.json`（0600），页面不回显；
+  owner 的 `.env` 只对 owner 生效。这是文件权限级隔离，服务器 root 仍可读取。
 - **关闭遥测**：Streamlit 的使用统计已在本项目 `.streamlit/config.toml` 中关闭；
   CLI 默认不请求任何公告接口。
 - **不要提交 `.env`**：里面是你的 API Key。仓库的 `.gitignore` 已经排除它。

@@ -21,7 +21,26 @@ _INCOMPLETE_TASKS_LOCK = threading.Lock()
 
 
 def _results_dir() -> Path:
-    return Path.home() / ".tradingagents" / "logs"
+    """当前账户的报告目录；未绑定用户时回落到旧单用户目录。
+
+    多用户下这是**唯一入口**：侧栏历史列表、报告页加载、未完成任务判断都经过它。
+    不要在别处直接拼 ``Path.home()/".tradingagents"/"logs"``。
+    """
+    from web.user_context import current_paths
+
+    paths = current_paths()
+    return paths.logs if paths is not None else Path.home() / ".tradingagents" / "logs"
+
+
+def _incomplete_tasks_file() -> Path:
+    from web.user_context import current_paths
+
+    paths = current_paths()
+    return (
+        paths.incomplete_tasks
+        if paths is not None
+        else _INCOMPLETE_TASKS_FILE
+    )
 
 
 def get_history() -> list[dict[str, str]]:
@@ -58,13 +77,14 @@ def _completed_keys() -> set[tuple[str, str]]:
 
 
 def _load_incomplete_index() -> list[dict[str, Any]]:
-    if not _INCOMPLETE_TASKS_FILE.exists():
+    target = _incomplete_tasks_file()
+    if not target.exists():
         return []
 
     try:
-        with open(_INCOMPLETE_TASKS_FILE, encoding="utf-8") as f:
+        with open(target, encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return []
 
     if not isinstance(data, list):
@@ -92,7 +112,8 @@ def _save_incomplete_index(entries: list[dict[str, Any]]) -> None:
     先重试几次等待锁释放，仍失败则降级为直接覆写——读取端
     （``_load_incomplete_index``）已容错损坏 JSON，索引写不进去不致命。
     """
-    parent = _INCOMPLETE_TASKS_FILE.parent
+    target = _incomplete_tasks_file()
+    parent = target.parent
     parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(entries, ensure_ascii=False, indent=2)
 
@@ -103,13 +124,13 @@ def _save_incomplete_index(entries: list[dict[str, Any]]) -> None:
                 "w",
                 encoding="utf-8",
                 dir=parent,
-                prefix=f"{_INCOMPLETE_TASKS_FILE.stem}.",
+                prefix=f"{target.stem}.",
                 suffix=".tmp",
                 delete=False,
             ) as f:
                 f.write(payload)
                 tmp = Path(f.name)
-            tmp.replace(_INCOMPLETE_TASKS_FILE)
+            tmp.replace(target)
             return
         except PermissionError:
             if tmp is not None:
@@ -122,7 +143,7 @@ def _save_incomplete_index(entries: list[dict[str, Any]]) -> None:
 
     # 重试耗尽仍被占用：直接覆写（非原子但可接受）。
     try:
-        _INCOMPLETE_TASKS_FILE.write_text(payload, encoding="utf-8")
+        target.write_text(payload, encoding="utf-8")
     except OSError as e:
         # 索引写不进去不致命——读取端容错、下次写入会自动重建，所以不往上抛。
         # 但**不能一声不吭**：完全静默的话，用户永远不会知道它一直在失败，
@@ -136,8 +157,11 @@ def _save_incomplete_index(entries: list[dict[str, Any]]) -> None:
 def _checkpoint_step(ticker: str, trade_date: str) -> int | None:
     try:
         from tradingagents.graph.checkpointer import checkpoint_step
+        from web.user_context import current_paths
 
-        return checkpoint_step(DEFAULT_CONFIG["data_cache_dir"], ticker, trade_date)
+        paths = current_paths()
+        cache_dir = paths.cache if paths is not None else DEFAULT_CONFIG["data_cache_dir"]
+        return checkpoint_step(cache_dir, ticker, trade_date)
     except Exception:
         return None
 
@@ -215,7 +239,17 @@ def get_incomplete_history() -> list[dict[str, Any]]:
 
 
 def load_analysis(path: str) -> dict[str, Any]:
-    """Load a saved analysis JSON file."""
+    """Load a saved analysis JSON file.
+
+    路径必须落在**当前账户**的日志目录内。历史列表的 path 是服务端生成的，但
+    session_state 可被旧会话/构造请求污染；多用户下这里再守一道，避免把
+    「读任意文件」变成跨用户越权。
+    """
+    from web.user_context import current_paths
+
+    paths = current_paths()
+    if paths is not None and not paths.contains(path):
+        raise ValueError("报告路径不属于当前账户。")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 

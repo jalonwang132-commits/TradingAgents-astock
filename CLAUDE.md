@@ -1,14 +1,14 @@
 # Jalon A股投研工作台
 
 ## 项目概述
-个人自用、本地部署的 A 股多 Agent 投研工作台。7 个 Analyst 角色通过 Bull/Bear 辩论 +
-三方风险辩论生成中文投资报告，数据全部来自免费公开行情接口，模型和 API Key 都由使用者
-自己配置。
+个人自用、可部署给朋友共用的 A 股多 Agent 投研工作台。7 个 Analyst 角色通过 Bull/Bear
+辩论 + 三方风险辩论生成中文投资报告，数据全部来自免费公开行情接口，模型和 API Key
+由每个账户自己配置（v0.7.0 起有邀请制多用户模式；CLI 仍是单用户 owner 模式）。
 
 - **仓库**: https://github.com/jalonwang132-commits/TradingAgents-astock
 - **协议**: Apache 2.0（原始版权归属见 `NOTICE`）
 - **Python**: >=3.10（推荐 3.12/3.13）
-- **当前版本**: 0.6.0（2026-10-22）
+- **当前版本**: 0.7.0（2026-10-22）
   ⚠️ 改版本号时**三处要一起改**：`pyproject.toml` / `CHANGELOG.md` / 这一行。漏了这行会让后续 agent 和发版流程读到旧版本（`tests/test_version_consistency.py` 会拦）。
 
 ## 架构
@@ -38,7 +38,12 @@
 - `tradingagents/agents/prompt_builder.py` — 默认模板 + 覆盖值的组装；页面预览与 agent 共用
 - `web/` — Streamlit Web UI
 - `web/components/team_view.py` — 「投研团队」页（拓扑 + 提示词编辑 + 编排）
-- `web/team_store.py` — 团队配置持久化（`~/.tradingagents/team_config.json`）
+- `web/team_store.py` — 团队配置持久化（当前账户的 `team_config.json`）
+- `web/user_paths.py` — **每用户目录布局的唯一来源**（owner 复用旧根目录）
+- `web/user_context.py` — 线程级用户上下文（`ContextVar`），activate/deactivate
+- `web/auth/` — 账户/邀请码/密码/限流/审计 + Streamlit 登录门与账户页
+- `web/secrets_store.py` — 每用户 API Key（`secrets.json`，0600，不回显）
+- `web/run_registry.py` — 并发租约 / 每日次数 / 磁盘配额
 - `web/team_state.py` — 从 graph state 推导 16 角色实时状态
 - `cli/` — CLI 入口
 
@@ -58,6 +63,32 @@
 战法里可用 `{ticker}` / `{date}`（所有角色）、`{lookback}`（分析师）、
 `{history}` / `{reports}` 等角色变量。**当前 `get_indicators` 只支持固定指标集**，
 用户写了 KDJ/OBV 等也取不到数；需要硬性判定的规则应后续做成代码级规则引擎。
+
+### 多用户隔离（v0.7.0，改 Web/配置层必读）
+
+- **路径**：所有用户态文件必须走 `web.user_paths.UserPaths`；禁止在业务代码里直接拼
+  `Path.home()/".tradingagents"`。owner 的 root 就是 `~/.tradingagents/`（CLI 共用），
+  成员在 `users/<uid>/`。`paths.contains()` 只允许 `logs/`，用于拦住构造历史路径读
+  任意文件。
+- **运行期配置**：`tradingagents/dataflows/config.py` 是 `ContextVar`（线程/任务级），
+  不是模块级 dict。两个分析线程并发时 `strategy_packs` / `output_language` / 缓存目录
+  互不覆盖。**新增全局可变配置时必须用 ContextVar。**
+- **API Key**：`config["llm_api_keys"]` + `config["allow_env_api_keys"]`。成员
+  `allow_env_api_keys=False`，客户端不得回落到 `.env`；owner Key 优先级高于 `.env`。
+  新增 provider 必须支持显式 `api_key` 和该开关。
+- **线程**：`run_analysis_in_thread(paths=..., lease_token=...)` 在工作线程开头
+  `activate(paths)`，`finally` 释放租约。新增后台线程同样处理。
+- **认证**：`web/app.py` 必须在任何业务组件前调 `require_login()`；会话只在
+  `session_state`（不写 cookie），密码修改/停用会使旧会话失效。账户库损坏或缺
+  `.initialized` 时拒绝进入创建 owner。
+- **权限**：Claude 订阅（`claude_agent_sdk`）是服务器级凭据，仅 owner 可用；成员的
+  `subscription_scope` 在 UI 与 `_build_config` 两处强制 `off`。
+- **出站端点**：成员自定义 API Base URL 必须过 `web/url_safety.validate_base_url`
+  （默认只允许公网 http(s)，拒绝回环/私有/link-local/元数据地址）；新增出站客户端
+  不能绕过。owner 可用 `TRADINGAGENTS_ALLOW_PRIVATE_BASE_URLS=1` 显式放开内网中转。
+- 部署/威胁模型/备份见 `MULTIUSER.md`；隔离测试见
+  `tests/test_multiuser_*.py`、`tests/test_context_config.py`、`tests/test_api_key_override.py`、
+  `tests/test_multiuser_graph_keys.py`。
 
 ### 中文股票名解析链路
 用户/LLM 输入 → `safe_ticker_component` 检测中文 → `resolve_ticker()` → `_build_name_code_map()`（mootdx 全市场映射，缓存）→ 返回 6 位代码
@@ -133,7 +164,7 @@ deepseek-v4-flash 等模型在 tool call 时可能返回中文股票名而非 6 
 
 ### 测试
 **干净 clone（`pip install -e .` 不带 `[agentsdk]`）跑 `pytest tests/` 应当是
-654 passed / 14 skipped / **0 failed**（2026-10-20 实测，Python 3.13；跳过的都是没装的可选依赖 claude-agent-sdk / langchain-google-genai）。出现 failed 就是真回归。**
+719 passed / 14 skipped / **0 failed**（2026-10-22 实测，Python 3.13；跳过的都是没装的可选依赖 claude-agent-sdk / langchain-google-genai）。出现 failed 就是真回归。**
 需要可选依赖的用例用 `requires_sdk` 标记跳过——⚠️ **占位类型绝不要用 `Exception`
 基类**：`ClaudeSDKError` 曾被占位成 `Exception`，进 `_FALLBACK_ERRORS` 后让"订阅凭据
 失效不得降级到计费 provider"这条护栏彻底失效（v0.5.4 修）。

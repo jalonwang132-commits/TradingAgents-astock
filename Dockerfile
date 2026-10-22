@@ -36,7 +36,9 @@ WORKDIR /home/appuser/app
 # /home/appuser/.tradingagents/cache" reported in issue #46.
 RUN mkdir -p /home/appuser/.tradingagents/cache \
              /home/appuser/.tradingagents/logs \
-             /home/appuser/.tradingagents/memory
+             /home/appuser/.tradingagents/memory \
+             /home/appuser/.tradingagents/auth \
+             /home/appuser/.tradingagents/users
 
 COPY --from=builder --chown=appuser:appuser /build .
 

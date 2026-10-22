@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.7.0] — 2026-10-22
+
+### 新增：多用户模式（邀请制账户 + 每用户隔离）
+
+- **Web 首次启动创建 owner 账户**，之后仅凭 owner 生成的邀请码注册。新增
+  `web/auth/`（账户、scrypt 密码、邀请码、限流、审计）与「👤 账户」页：
+  改密码、保存每个供应商的 API Key、owner 的用户管理 / 邀请码 / 注册策略 / 审计日志。
+- **每用户数据隔离**：历史报告、未完成任务、LangGraph 断点、记忆日志、缺失数据、
+  模型选择、团队配置 / 提示词 / 战法、API Key 全部落到
+  `~/.tradingagents/users/<uid>/`。**owner 继续复用旧的 `~/.tradingagents/`**，
+  CLI 与 Web 共享同一份历史，升级不需要搬运大目录。
+- **每用户 API Key**：侧栏「⚙️ 模型配置」或「👤 账户 → API Key」直接保存，页面只
+  显示末 4 位。优先级：用户 Key > （仅 owner）.env > 明确报错；普通成员不会借用
+  owner 的 Key。覆盖 OpenAI / OpenAI 兼容 / DeepSeek / Qwen / GLM / MiniMax /
+  Anthropic / Google / xAI / OpenRouter / Azure。
+- **运行期配置线程隔离**：`dataflows/config.py` 从模块级全局 dict 改为
+  `ContextVar`。两个用户同时分析时，A 的战法 / 语言 / 缓存目录不会再覆盖 B。
+- **成员自定义端点防 SSRF**：Base URL 仅允许 http(s) 公网目标，解析后拒绝回环 /
+  私有 / link-local / 云元数据地址；内网中转需 owner 显式开
+  `TRADINGAGENTS_ALLOW_PRIVATE_BASE_URLS=1`。成员的原生 OpenAI 请求也会钉死
+  官方端点，不再继承 `OPENAI_BASE_URL` / `OPENAI_API_BASE`。
+- **准入与防滥用**：每用户 1 个并发分析、全服务器并发上限、成员每日次数
+  （持久化到 `usage.json`）、每账户磁盘配额、登录/注册限流、邀请码默认 72 小时
+  1 次、账户数硬上限。
+- **账户库安全**：`accounts.json` / `audit.log` 0600，邀请码只存哈希，密码 scrypt
+  加盐；账户库损坏或缺失但已初始化时拒绝进入「创建 owner」，避免被删文件接管。
+- **可选 trusted-header 登录**：反向代理（nginx basic auth / Authelia）认证后自动
+  登录，解决 Streamlit 刷新掉登录的问题；必须配共享密钥且应用只监听回环。
+- 新增 `MULTIUSER.md`：隔离协议、存储布局、Caddy/nginx/systemd/Docker 部署、
+  备份恢复、owner 忘记密码、威胁模型与验收清单。
+- 登录限流改为「先原子记账再认证」，避免并发 check-then-act 绕过；scrypt 校验
+  移出账户库进程锁，匿名登录不再阻塞已登录用户的 rerun。暂停中的分析按线程存活
+  判断租约，不再因超过 6 小时被清掉而绕过并发限制。
+- 测试：新增账户/隔离/上下文/Key/Web 端到端/SSRF 共 65 例；全量
+  **719 passed / 14 skipped / 0 failed**（Python 3.13）。
+
+### 破坏性变更（0.x）
+
+- Web 首次启动不再直接进入工作台，必须先创建 owner；已有单用户用户创建 owner 后
+  旧数据自动归 owner（没有搬动文件）。
+- 普通成员必须在自己的账户里配置 API Key 才能分析；服务器 `.env` 的 Key 只对
+  owner 生效。
+- 普通成员不能使用 owner 的 Claude 订阅额度（服务器级凭据）。
+- 页面刷新需要重新登录（除非启用 trusted-header 模式）。
+
 ## [0.6.0] — 2026-10-22
 
 ### 变更：个人品牌化（Jalon Edition）

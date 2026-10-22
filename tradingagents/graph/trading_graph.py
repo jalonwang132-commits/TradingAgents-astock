@@ -285,10 +285,17 @@ class TradingAgentsGraph:
                 _main_norm = str(self.config["llm_provider"] or "").strip().lower()
                 cross_provider = bool(_fb_norm) and _fb_norm != _main_norm
                 _fb_effective = _fb_norm or _main_norm
+                _fb_keys = self.config.get("llm_api_keys") or {}
+                _fb_key = _fb_keys.get(_fb_effective) if isinstance(_fb_keys, dict) else None
                 fallback_spec = {
                     "provider": _fb_effective,
                     "model": _fb_model or self.config[fallback_model_key],
                     "base_url": None if cross_provider else self.config.get("backend_url"),
+                    # 降级目标可能是另一家 provider：Key 必须按**目标**取，
+                    # 不能把主 provider 的 Key 发过去。
+                    **({"api_key": _fb_key} if _fb_key else {}),
+                    **({"allow_env_api_key": bool(self.config.get("allow_env_api_keys"))}
+                       if "allow_env_api_keys" in self.config else {}),
                     # 带上 callbacks：降级意味着**开始计费**，此时统计/成本回调
                     # 反而看不到这些调用的话，恰好在花钱的时候统计是瞎的。
                     **({"callbacks": self.callbacks} if self.callbacks else {}),
@@ -441,19 +448,14 @@ class TradingAgentsGraph:
             else:
                 base_url = None
 
-            # 主 provider 的**专属**参数不能带给另一家：openai 的
-            # `reasoning_effort`、google 的 `thinking_level`、anthropic 的 `effort`
-            # 都是各家私有的，塞进 qwen / glm / 自建网关的请求体里可能直接被拒。
-            # 通用参数（max_tokens / callbacks 等）保留。
-            # `dict(...)` 是防御性的：下面要 pop 韧性键，同名分支直接复用引用就会
-            # 就地改掉调用方的 llm_kwargs。**当前观察不到后果**（主 quick/deep 两个
-            # 客户端已在本方法之前建好），所以没有测试钉它；留着是为了别人挪动建
-            # 客户端的顺序时不会踩到。
+            # 主 provider 的专属参数不能带给另一家；api_key 也必须按目标 provider
+            # 重新取——否则主 provider 的 Key 会被发到另一家的网关上。
             role_kwargs = (
                 dict(llm_kwargs) if provider_norm == main_norm
                 else {k: v for k, v in llm_kwargs.items()
                       if k not in _PROVIDER_SPECIFIC_KWARGS}
             )
+            role_kwargs.pop("api_key", None)
             # 超时/重试按**这个角色的** provider 重算，不沿用主 provider 的那份：
             # 主 anthropic + bull=deepseek 时，deepseek 角色本该拿到应用层退避重试
             # （它的 SDK 重试被我们置 0 了）；反方向则绝不能把 max_retries=0 套到
@@ -462,11 +464,20 @@ class TradingAgentsGraph:
                 role_kwargs.pop(key, None)
             role_kwargs.update(self._resilience_kwargs(provider_norm))
 
-            key = (provider_norm, spec["model"], base_url, spec.get("api_key"))
+            role_api_key = spec.get("api_key")
+            if not role_api_key:
+                role_keys = self.config.get("llm_api_keys") or {}
+                if isinstance(role_keys, dict):
+                    role_api_key = role_keys.get(provider_norm)
+            key = (provider_norm, spec["model"], base_url, role_api_key)
             if key not in cache:
                 client_kwargs = dict(role_kwargs)
-                if spec.get("api_key"):
-                    client_kwargs["api_key"] = spec["api_key"]
+                if role_api_key:
+                    client_kwargs["api_key"] = role_api_key
+                if "allow_env_api_keys" in self.config:
+                    client_kwargs["allow_env_api_key"] = bool(
+                        self.config.get("allow_env_api_keys")
+                    )
                 cache[key] = create_llm_client(
                     provider=provider,
                     model=spec["model"],
@@ -543,6 +554,16 @@ class TradingAgentsGraph:
             effort = self.config.get("anthropic_effort")
             if effort:
                 kwargs["effort"] = effort
+
+        # 多用户：按账户保存的 Key 优先于进程环境变量。`allow_env_api_keys=False`
+        # 时客户端不会回落到 .env（普通成员不能借用 owner 的凭据）。
+        api_keys = self.config.get("llm_api_keys") or {}
+        if isinstance(api_keys, dict):
+            key = api_keys.get(provider)
+            if key:
+                kwargs["api_key"] = key
+        if "allow_env_api_keys" in self.config:
+            kwargs["allow_env_api_key"] = bool(self.config.get("allow_env_api_keys"))
 
         return kwargs
 

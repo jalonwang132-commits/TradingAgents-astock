@@ -5,7 +5,8 @@
 1. **流水线视图** —— 7 位分析师 → 质量门控 → 多空辩论 → 研究员 → 交易员 →
    风险委员会，每张卡片显示该角色本次分析的实时状态（等待/进行中/已完成/未参与）。
 2. **角色提示词编辑器** —— 完整展示真正会发出去的提示词，支持变量、全文预览、
-   保存/恢复默认。覆盖值写入 ``~/.tradingagents/team_config.json``，下一次
+   保存/恢复默认。覆盖值写入**当前账户**的 ``team_config.json``（owner 在
+   ``~/.tradingagents/``，成员在 ``~/.tradingagents/users/<id>/``），下一次
    「开始分析」立即生效。
 3. **我的战法** —— 独立于基础提示词的个性化策略包，按角色生效、可启用/停用；
    保存后追加到角色提示词末尾，预览会显示合并结果。
@@ -1002,7 +1003,7 @@ def render_team_view() -> None:
     # ── 团队编排 ────────────────────────────────────────────────────────────
     with st.expander("⚙️ 团队编排：谁参与、辩论几轮", expanded=False):
         st.caption(
-            "改动会写入 `~/.tradingagents/team_config.json`，下一次「开始分析」生效；"
+            "改动会写入当前账户的 `team_config.json`，下一次「开始分析」生效；"
             "不会打断正在跑的任务。"
         )
         st.session_state.setdefault("team_analysts", list(cfg["selected_analysts"]))

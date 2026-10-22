@@ -25,7 +25,9 @@ services:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_HEADLESS=true
     ports:
-      - "8501:8501"
+      # 只绑回环：公网请用 Caddy/nginx 做 TLS 后反代到 127.0.0.1:8501。
+      # 直接映射 "8501:8501" 会把未加 TLS 的登录页暴露到所有网卡。
+      - "127.0.0.1:8501:8501"
     volumes:
       - tradingagents_data:/home/appuser/.tradingagents
 

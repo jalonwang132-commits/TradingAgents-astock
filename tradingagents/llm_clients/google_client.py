@@ -46,6 +46,7 @@ class GoogleClient(BaseLLMClient):
         """Return configured ChatGoogleGenerativeAI instance."""
         self.warn_if_unknown_model()
         llm_kwargs = {"model": self.model}
+        allow_env = bool(self.kwargs.get("allow_env_api_key", True))
 
         if self.base_url:
             llm_kwargs["base_url"] = self.base_url
@@ -58,6 +59,11 @@ class GoogleClient(BaseLLMClient):
         google_api_key = self.kwargs.get("api_key") or self.kwargs.get("google_api_key")
         if google_api_key:
             llm_kwargs["google_api_key"] = google_api_key
+        elif not allow_env:
+            raise RuntimeError(
+                "未找到 Google Gemini 的 API Key。请在「👤 账户 → API Key」保存你自己的 "
+                "`GOOGLE_API_KEY`（服务器不会借用 owner 的 Key）。"
+            )
 
         # Map thinking_level to appropriate API param based on model
         # Gemini 3 Pro: low, high

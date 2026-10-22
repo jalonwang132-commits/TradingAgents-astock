@@ -37,6 +37,13 @@ class AzureOpenAIClient(BaseLLMClient):
     def get_llm(self) -> Any:
         """Return configured AzureChatOpenAI instance."""
         self.warn_if_unknown_model()
+        allow_env = bool(self.kwargs.get("allow_env_api_key", True))
+        if not allow_env and not self.kwargs.get("api_key"):
+            # Azure 的 endpoint/key 都习惯从环境变量取；多用户模式下不允许成员
+            # 借用服务器凭据。Web UI 暂不暴露 Azure，这里只守住 role_llms 等旁路。
+            raise RuntimeError(
+                "多用户模式下 Azure 需要显式 api_key；请改用其他供应商或在账户里配置。"
+            )
 
         llm_kwargs = {
             "model": self.model,

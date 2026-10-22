@@ -3,7 +3,9 @@
 与侧栏的 LLM 配置分开存：团队编排属于**项目级**偏好（哪些分析师参与、辩论几轮、
 每个角色的提示词），不应该因为换了个模型就被覆盖。
 
-文件位置：``~/.tradingagents/team_config.json``。读取时做一次结构校验，坏文件
+文件位置：当前账户的 ``team_config.json``——owner 复用旧单用户路径
+``~/.tradingagents/team_config.json``，成员在 ``~/.tradingagents/users/<id>/``。
+读取时做一次结构校验，坏文件
 回落到默认值而不是让整个页面崩掉；写入走临时文件 + ``os.replace``，避免写一半
 被 Ctrl-C 打断后留下半个 JSON。
 """
@@ -32,6 +34,14 @@ TEAM_CONFIG_VERSION = 1
 TEAM_CONFIG_PATH = (
     Path(os.path.expanduser("~")) / ".tradingagents" / "team_config.json"
 )
+
+
+def _default_path() -> Path:
+    """当前账户的团队配置路径；未绑定用户（CLI/测试）回落到旧单用户路径。"""
+    from web.user_context import current_paths
+
+    paths = current_paths()
+    return paths.team_config if paths is not None else TEAM_CONFIG_PATH
 
 DEFAULT_MAX_DEBATE_ROUNDS = 1
 DEFAULT_MAX_RISK_ROUNDS = 1
@@ -162,12 +172,12 @@ def normalize_team_config(raw: Any) -> dict[str, Any]:
 
 def load_team_config(path: Path | str | None = None) -> dict[str, Any]:
     """读取团队配置；文件不存在/损坏都返回默认值。"""
-    target = Path(path) if path is not None else TEAM_CONFIG_PATH
+    target = Path(path) if path is not None else _default_path()
     try:
         raw = json.loads(target.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return default_team_config()
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         logger.warning("团队配置读取失败，使用默认值: %s", exc)
         return default_team_config()
     return normalize_team_config(raw)
@@ -177,7 +187,7 @@ def save_team_config(
     config: Mapping[str, Any], path: Path | str | None = None
 ) -> dict[str, Any]:
     """校验后原子写入，返回真正落盘的配置。"""
-    target = Path(path) if path is not None else TEAM_CONFIG_PATH
+    target = Path(path) if path is not None else _default_path()
     normalized = normalize_team_config(config)
     normalized["version"] = TEAM_CONFIG_VERSION
 

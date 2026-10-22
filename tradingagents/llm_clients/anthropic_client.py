@@ -46,10 +46,21 @@ class AnthropicClient(BaseLLMClient):
         """Return configured ChatAnthropic instance."""
         self.warn_if_unknown_model()
         llm_kwargs = {"model": self.model}
+        explicit_key = str(self.kwargs.get("api_key") or "").strip()
+        # 多用户：普通成员不使用服务器 .env 的 ANTHROPIC_API_KEY / BASE_URL。
+        allow_env = bool(self.kwargs.get("allow_env_api_key", True))
 
-        base_url = self.base_url or os.environ.get("ANTHROPIC_BASE_URL")
+        base_url = self.base_url or (
+            os.environ.get("ANTHROPIC_BASE_URL") if allow_env else None
+        )
         if base_url:
             llm_kwargs["base_url"] = base_url
+
+        if not explicit_key and not allow_env:
+            raise RuntimeError(
+                "未找到 Anthropic 的 API Key。请在「👤 账户 → API Key」保存你自己的 "
+                "`ANTHROPIC_API_KEY`（服务器不会借用 owner 的 Key）。"
+            )
 
         # 用别家模型名走 anthropic 通道却没给端点，请求会发到 api.anthropic.com，
         # 拿一个第三方 token 去认证，结果是一句看不懂的 401 invalid x-api-key（#89）。

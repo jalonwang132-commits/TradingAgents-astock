@@ -33,7 +33,7 @@ def _detect_version() -> str:
             return version(dist)
         except PackageNotFoundError:
             continue
-    return "0.6.0"
+    return "0.7.0"
 
 
 VERSION = _detect_version()

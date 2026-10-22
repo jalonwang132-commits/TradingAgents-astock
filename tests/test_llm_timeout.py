@@ -50,16 +50,18 @@ def _timeout_error():
 
 @pytest.fixture
 def clean_global_config():
-    """`TradingAgentsGraph.__init__` 会 set_config() 改全局配置（原地 update，不可逆）。
+    """`TradingAgentsGraph.__init__` 会 set_config() 改运行期配置。
 
-    不还原的话，本文件建过图之后，同一次 pytest 里后面的用例会读到被污染的
-    `get_config()` —— 那种失败看起来像"另一个模块坏了"，最难查。
+    配置现在是线程/任务级的 ContextVar（Web 多用户隔离），不是模块级 dict。
+    不还原的话，同一次 pytest 里后面的用例会读到被污染的 `get_config()` ——
+    那种失败看起来像"另一个模块坏了"，最难查。
     """
-    saved = None if _dataflows_config._config is None else dict(_dataflows_config._config)
+    saved = dict(_dataflows_config.get_config())
     try:
         yield
     finally:
-        _dataflows_config._config = saved
+        _dataflows_config.reset_config()
+        _dataflows_config.set_config(saved)
 
 
 def _build_graph(tmp_path, overrides, selected_analysts=("market",)):

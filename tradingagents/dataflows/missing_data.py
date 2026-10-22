@@ -12,6 +12,7 @@ import json
 import re
 import threading
 import time
+from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,10 @@ from tradingagents.dataflows.utils import safe_ticker_component
 
 _MISSING_DATA_TASKS_FILE = Path.home() / ".tradingagents" / "missing_data_tasks.json"
 _MISSING_DATA_CACHE_DIR = Path.home() / ".tradingagents" / "missing_data_cache"
+# 多用户模式：每个分析线程绑定自己的用户目录；未绑定（CLI / 旧行为 / 测试）时
+# 回落到上面的单用户路径。**不要**把它改回模块级全局字符串，否则 A 的重试输出
+# 会写进 B 的目录。
+_STORE_ROOT: ContextVar[Path | None] = ContextVar("tradingagents_missing_data_root", default=None)
 _INDEX_LOCK = threading.RLock()
 # Keep the parsed index in memory between ToolNode calls.  The cache is
 # invalidated after writes and also notices external changes through the file
@@ -96,8 +101,23 @@ def _index_transaction(func):
     return _locked
 
 
+def set_store_root(root: Path | str | None) -> None:
+    """Bind missing-data storage to a per-user directory (None = legacy single user)."""
+    _STORE_ROOT.set(Path(root) if root is not None else None)
+
+
+def _tasks_file() -> Path:
+    root = _STORE_ROOT.get()
+    return root / "missing_data_tasks.json" if root is not None else _MISSING_DATA_TASKS_FILE
+
+
+def _cache_dir() -> Path:
+    root = _STORE_ROOT.get()
+    return root / "missing_data_cache" if root is not None else _MISSING_DATA_CACHE_DIR
+
+
 def _cache_path(task_id: str) -> Path:
-    return _MISSING_DATA_CACHE_DIR / f"{task_id}.txt"
+    return _cache_dir() / f"{task_id}.txt"
 
 
 def _write_cached_output(task_id: str, content: Any) -> Path:
@@ -127,7 +147,7 @@ def _index_file_signature(path: Path) -> tuple[int, int] | None:
 
 
 def _load_index() -> list[dict[str, Any]]:
-    path = _MISSING_DATA_TASKS_FILE
+    path = _tasks_file()
     signature = _index_file_signature(path)
     cached = _INDEX_CACHE.get(path)
     if cached is not None and cached[0] == signature:
@@ -162,7 +182,7 @@ def _load_index() -> list[dict[str, Any]]:
 
 
 def _save_index(entries: list[dict[str, Any]]) -> None:
-    path = _MISSING_DATA_TASKS_FILE
+    path = _tasks_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
@@ -501,9 +521,17 @@ def attach_missing_data_snapshot(
 
 
 def analysis_log_path(ticker: str, trade_date: str) -> Path:
+    """报告 JSON 路径。必须读运行期配置，不能读 DEFAULT_CONFIG。
+
+    多用户下 ``DEFAULT_CONFIG["results_dir"]`` 永远是旧单用户目录；用它同步缺失
+    数据快照会把 A 的重试结果写进 owner 的历史报告里（静默串数据）。
+    """
+    from .config import get_config
+
+    results_dir = get_config().get("results_dir") or DEFAULT_CONFIG["results_dir"]
     safe_ticker = safe_ticker_component(ticker)
     return (
-        Path(DEFAULT_CONFIG["results_dir"])
+        Path(results_dir)
         / safe_ticker
         / "TradingAgentsStrategy_logs"
         / f"full_states_log_{trade_date}.json"

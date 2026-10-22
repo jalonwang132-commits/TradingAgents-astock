@@ -20,23 +20,28 @@ load_dotenv(_PROJECT_ROOT / ".env", override=True)
 
 from tradingagents.default_config import DEFAULT_CONFIG  # noqa: E402
 
+from web.auth.ui import current_user, is_owner, require_login  # noqa: E402
 from web.branding import (  # noqa: E402
     APP_DESCRIPTION,
     APP_MARK_LEFT,
     APP_MARK_RIGHT,
     APP_NAME,
 )
+from web.components.account_view import render_account_view  # noqa: E402
 from web.components.progress_panel import render_progress  # noqa: E402
 from web.components.report_viewer import render_report  # noqa: E402
 from web.components.sidebar import render_sidebar, validate_model_selection  # noqa: E402
 from web.components.team_view import render_team_view  # noqa: E402
 from web.history import clear_incomplete_task, extract_signal, load_analysis  # noqa: E402
 from web.progress import ProgressTracker  # noqa: E402
+from web.run_registry import acquire_run, release_run  # noqa: E402
 from web.runner import run_analysis_in_thread  # noqa: E402
+from web.secrets_store import load_secrets  # noqa: E402
 from web.team_store import (  # noqa: E402
     apply_team_config_to_run_config,
     load_team_config,
 )
+from web.user_context import current_paths  # noqa: E402
 
 # ── Page config ──────────────────────────────────────────────────────────────
 
@@ -167,15 +172,41 @@ st.markdown(
 )
 
 
+# ── Auth gate ────────────────────────────────────────────────────────────────
+# 必须在任何业务组件（侧栏/历史/团队页）之前。未登录时 require_login() 会渲染
+# 登录/注册页并 st.stop()；成功时把当前线程绑定到该用户的目录。
+# 这一步同时把「页面访问」变成「账户访问」：后面所有路径都用 current_paths()。
+user = require_login()
+user_paths = current_paths()
+if user_paths is None:  # 理论上不可达；宁可报错也不要静默回落到公共目录
+    st.error("账户上下文初始化失败，请重新登录。")
+    st.stop()
+
+
 # ── Build config ─────────────────────────────────────────────────────────────
 
 def _build_config() -> dict:
+    paths = user_paths
     config = DEFAULT_CONFIG.copy()
     config["llm_provider"] = st.session_state.get("llm_provider", "minimax")
     config["deep_think_llm"] = st.session_state.get("deep_think_llm", "MiniMax-M2.7")
     config["quick_think_llm"] = st.session_state.get("quick_think_llm", "MiniMax-M2.7-highspeed")
-    # Optional third-party / proxy endpoint. Sidebar input wins, else .env BACKEND_URL.
-    backend_url = (st.session_state.get("llm_base_url") or os.getenv("BACKEND_URL") or "").strip()
+    # 每用户数据目录：报告 / 断点 / 记忆 / 缺失数据全部隔离。
+    config["results_dir"] = str(paths.logs)
+    config["data_cache_dir"] = str(paths.cache)
+    config["memory_log_path"] = str(paths.memory_log)
+    config["user_home"] = str(paths.root)
+    # 每用户 API Key。普通成员绝不允许回落到服务器的 .env（那是 owner 的凭据）。
+    config["llm_api_keys"] = load_secrets(paths.secrets)
+    config["allow_env_api_keys"] = is_owner(user)
+    # Optional third-party / proxy endpoint. Sidebar input wins. BACKEND_URL from
+    # .env is owner-only for the same reason as API keys: it may be the owner's
+    # paid relay.
+    backend_url = (
+        st.session_state.get("llm_base_url")
+        or (os.getenv("BACKEND_URL") if is_owner(user) else "")
+        or ""
+    ).strip()
     config["backend_url"] = backend_url or None
     config["data_vendors"] = {
         "core_stock_apis": "a_stock",
@@ -187,15 +218,14 @@ def _build_config() -> dict:
     # Analysis window (#16): start-date input in the sidebar → look-back days.
     config["market_lookback_days"] = st.session_state.get("market_lookback_days")
     # 团队编排（参与的分析师 / 辩论轮数 / 每个角色的提示词覆盖）来自
-    # 「投研团队」页，和模型配置分开持久化。
+    # 「投研团队」页，和模型配置分开持久化。路径由当前账户上下文决定。
     apply_team_config_to_run_config(config, load_team_config())
     config["checkpoint_enabled"] = True
     config["output_language"] = "Chinese"
     # Optional: route nodes through a personal Claude Pro/Max subscription (Agent
     # SDK). Scope: "deep" = Research/Portfolio only; "all" = + the 7 analysts.
-    # Leaving the fallback keys None makes the graph fall back to the
-    # sidebar-selected llm_provider + models on quota/failure.
-    scope = st.session_state.get("subscription_scope", "off")
+    # **仅 owner**：订阅凭据是服务器级的，不能让普通成员共用/耗尽。
+    scope = st.session_state.get("subscription_scope", "off") if is_owner(user) else "off"
     # 侧栏那个输入框只配**深度节点**的模型。不要把它同时赋给 quick——
     # quick 节点有 7 个分析师 + 多空/交易员/风险辩手，把深度节点的 opus 复制过去
     # 会让订阅额度烧得极快，也与 README / 侧栏提示所说的「quick 默认 sonnet」矛盾。
@@ -215,6 +245,15 @@ def _build_config() -> dict:
 with st.sidebar:
     render_sidebar()
 
+
+# ── 账户页 ──────────────────────────────────────────────────────────────────
+# 和团队页同一套「侧栏刚提交开始分析」例外：先让状态机消费请求。
+if (
+    st.session_state.get("current_view") == "account"
+    and not st.session_state.get("start_analysis")
+):
+    render_account_view()
+    st.stop()
 
 # ── 投研团队页面 ─────────────────────────────────────────────────────────────
 # 放在分析状态机之前：团队页要能看到正在跑的 tracker 角色状态。侧栏刚提交
@@ -239,31 +278,55 @@ if start_req:
     # 校验的是 `_build_config()` 的产物，也就是真正要发出去的那份配置。
     config = _build_config()
     model_error = validate_model_selection(config)
+
+    # 上一次 run 的租约如果没被正常释放（进程被杀 / 线程异常），会永远挡住
+    # 这个用户。这里只在「当前会话没有正在跑的任务」时清理残留租约。
+    current_tracker = st.session_state.get("tracker")
+    if not (current_tracker is not None and current_tracker.is_running):
+        stale = st.session_state.pop("run_lease", None)
+        if stale:
+            release_run(str(stale))
+
     if model_error:
         st.error(f"❌ {model_error}")
     else:
-        if start_req.get("fresh"):
-            from tradingagents.graph.checkpointer import clear_checkpoint
+        lease, refusal = acquire_run(user_paths, is_owner=is_owner(user))
+        if lease is None:
+            st.error(f"❌ {refusal}")
+        else:
+            st.session_state["run_lease"] = lease.token
+            try:
+                if start_req.get("fresh"):
+                    from tradingagents.graph.checkpointer import clear_checkpoint
 
-            clear_incomplete_task(start_req["ticker"], start_req["trade_date"])
-            clear_checkpoint(
-                DEFAULT_CONFIG["data_cache_dir"],
-                start_req["ticker"],
-                start_req["trade_date"],
-            )
+                    clear_incomplete_task(start_req["ticker"], start_req["trade_date"])
+                    clear_checkpoint(
+                        user_paths.cache,
+                        start_req["ticker"],
+                        start_req["trade_date"],
+                    )
 
-        tracker = ProgressTracker(
-            ticker=start_req["ticker"],
-            trade_date=start_req["trade_date"],
-        )
-        st.session_state["tracker"] = tracker
-        st.session_state["viewing_history"] = None
-        run_analysis_in_thread(
-            ticker=start_req["ticker"],
-            trade_date=start_req["trade_date"],
-            config=config,
-            tracker=tracker,
-        )
+                tracker = ProgressTracker(
+                    ticker=start_req["ticker"],
+                    trade_date=start_req["trade_date"],
+                )
+                st.session_state["tracker"] = tracker
+                st.session_state["viewing_history"] = None
+                run_analysis_in_thread(
+                    ticker=start_req["ticker"],
+                    trade_date=start_req["trade_date"],
+                    config=config,
+                    tracker=tracker,
+                    paths=user_paths,
+                    lease_token=lease.token,
+                )
+            except Exception:
+                # 清断点 / 起线程任何一步抛异常都要归还租约，否则这个用户会被
+                # 自己的残留租约挡到进程重启。
+                release_run(lease.token)
+                st.session_state.pop("run_lease", None)
+                st.session_state.pop("tracker", None)
+                raise
 
 
 # ── Main area state machine ─────────────────────────────────────────────────

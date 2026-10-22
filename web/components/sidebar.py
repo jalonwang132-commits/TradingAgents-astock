@@ -1,7 +1,8 @@
-"""Sidebar: stock input, LLM config, and history list."""
+"""Sidebar: stock input, LLM config, API keys, account nav, and history list."""
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -27,18 +28,58 @@ from web.history import (
     get_incomplete_history,
     record_incomplete_task,
 )
+from web.llm_providers import (
+    PROVIDER_DISPLAY as _PROVIDER_DISPLAY,
+    PROVIDER_KEYS as _PROVIDER_KEYS,
+    PROVIDERS as _PROVIDERS,
+    env_var_candidates,
+    env_var_for,
+    provider_label,
+    provider_needs_key,
+)
+from web.secrets_store import delete_api_key, load_secrets, mask_key, set_api_key
+from web.url_safety import validate_base_url
+from web.user_context import current_paths
 
 logger = logging.getLogger(__name__)
 
 # ── LLM config persistence ────────────────────────────────────────────────────
 # Saves model selection to a JSON file so it survives browser tab close/reopen.
-# 放用户目录而不是包目录：pip 安装时包目录在 site-packages（常只读、升级即清空），
-# git clone 用户则会在仓库里多出一个未跟踪文件。~/.tradingagents/ 是本项目其它用户态
-# 数据（logs / cache / memory）已经在用的位置。
+# 多用户模式：路径由 web.user_context 绑定到当前账户；未登录（CLI / 测试 / 旧
+# 单用户模式）时回落到 ~/.tradingagents/llm_config.json。
 _LLM_CONFIG_PATH = Path(os.path.expanduser("~")) / ".tradingagents" / "llm_config.json"
 # 侧栏「个人 Claude 订阅覆盖」选项的取值；selectbox 的 widget 键是 subscription_scope_idx，
 # 恢复时必须写这个索引，只写派生值 subscription_scope 会在渲染时被覆盖回默认。
 _SCOPE_VALUES = ["off", "deep", "all"]
+
+
+def _llm_config_path() -> Path:
+    paths = current_paths()
+    return paths.llm_config if paths is not None else _LLM_CONFIG_PATH
+
+
+def _analysis_cache_dir() -> str:
+    paths = current_paths()
+    return str(paths.cache) if paths is not None else DEFAULT_CONFIG["data_cache_dir"]
+
+
+def _current_user() -> dict | None:
+    user = st.session_state.get("auth_user")
+    return user if isinstance(user, dict) else None
+
+
+def _is_owner() -> bool:
+    """当前账户是否 owner。
+
+    没有登录用户时（CLI / 测试 / 旧单用户模式）按 owner 处理，保持旧行为；
+    但**只要已经绑定了 Web 用户上下文**（current_paths 非空），缺少 auth_user
+    就按 member 处理（fail-closed），避免渲染顺序回归时泄漏 owner 权限。
+    """
+    user = _current_user()
+    if user is not None:
+        return user.get("role") == "owner"
+    return current_paths() is None
+
 
 # `MODEL_OPTIONS` 里每个供应商都带一条哨兵项 `("Custom model ID", "custom")`，含义是
 # "自己填模型 ID"。CLI 会就此追问输入（cli/utils.py::_select_model），Web 却把这个
@@ -91,13 +132,47 @@ def validate_model_selection(config: dict | None = None) -> str | None:
                 f"{label}的模型 ID 没填。请在「⚙️ 模型配置」里选一个模型，"
                 "或选「Custom model ID」后填上该供应商实际支持的 ID。"
             )
+
+    # 多用户模式下，普通成员的 Key 只来自自己的 secrets.json；没有就当场拦住，
+    # 不要等请求打到上游才收到 401（更糟的是 owner 的 .env Key 被悄悄用掉）。
+    # `allow_env_api_keys` 只在 Web 多用户配置里出现，CLI / 旧测试不受影响。
+    if "allow_env_api_keys" in source:
+        provider = str(source.get("llm_provider") or "").strip().lower()
+        allow_env = bool(source.get("allow_env_api_keys"))
+        base_url = str(
+            source.get("backend_url") or source.get("llm_base_url") or ""
+        ).strip()
+        if provider == "openai_compatible" and not base_url:
+            return "「OpenAI 兼容」供应商需要填写 API Base URL（你的网关地址）。"
+        # 普通成员可以自定义端点，但**不能让服务器去请求内网/元数据地址**。
+        # owner（allow_env=True）跳过：owner 可能故意接本机/内网中转。
+        if base_url and not allow_env:
+            try:
+                validate_base_url(base_url)
+            except ValueError as exc:
+                return f"API Base URL 不安全：{exc}"
+        if provider_needs_key(provider):
+            keys = source.get("llm_api_keys") or {}
+            has_key = isinstance(keys, dict) and bool(str(keys.get(provider) or "").strip())
+            env_name = env_var_for(provider)
+            has_env = allow_env and any(
+                os.environ.get(name) for name in env_var_candidates(provider)
+            )
+            if not has_key and not has_env and not allow_env:
+                return (
+                    f"{provider_label(provider)} 还没配置 API Key。"
+                    f"请在「⚙️ 模型配置」或「👤 账户 → API Key」里保存你自己的 Key"
+                    f"（服务器不会借用 owner 的 {env_name}）。"
+                )
+            # owner 缺 Key 不在这里硬拦：owner 可能开着 Claude 订阅覆盖（走本机
+            # 凭据，不需要 API Key）。真需要 Key 时客户端会给出明确错误。
     return None
 
 
 def _load_saved_llm_config() -> None:
     """Restore user's last model selection into session_state defaults."""
     try:
-        cfg = json.loads(_LLM_CONFIG_PATH.read_text())
+        cfg = json.loads(_llm_config_path().read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return
     provider_key = cfg.get("llm_provider", "")
@@ -109,11 +184,19 @@ def _load_saved_llm_config() -> None:
     st.session_state.setdefault("quick_model_idx", cfg.get("quick_model_idx", 0))
     st.session_state.setdefault("deep_model_idx", cfg.get("deep_model_idx", 0))
     st.session_state.setdefault("llm_base_url", cfg.get("llm_base_url", ""))
-    scope = cfg.get("subscription_scope", "off")
-    st.session_state.setdefault("subscription_scope", scope)
-    st.session_state.setdefault(
-        "subscription_scope_idx", _SCOPE_VALUES.index(scope) if scope in _SCOPE_VALUES else 0
-    )
+    # 普通成员不允许使用 owner 的 Claude 订阅额度：即使旧配置里存了 scope，
+    # 加载时也强制关掉（渲染层还会再挡一次）。
+    if not _is_owner():
+        # 显式覆盖，不用 setdefault：登录前残留的 deep/all 不能让成员继承。
+        st.session_state["subscription_scope"] = "off"
+        st.session_state["subscription_scope_idx"] = 0
+    else:
+        scope = cfg.get("subscription_scope", "off")
+        st.session_state.setdefault("subscription_scope", scope)
+        st.session_state.setdefault(
+            "subscription_scope_idx",
+            _SCOPE_VALUES.index(scope) if scope in _SCOPE_VALUES else 0,
+        )
     if cfg.get("agent_sdk_model"):
         st.session_state.setdefault("agent_sdk_model", cfg["agent_sdk_model"])
     for key in ("custom_quick_model", "custom_deep_model"):
@@ -128,7 +211,9 @@ def _save_llm_config() -> None:
         "quick_model_idx": st.session_state.get("quick_model_idx", 0),
         "deep_model_idx": st.session_state.get("deep_model_idx", 0),
         "llm_base_url": st.session_state.get("llm_base_url", ""),
-        "subscription_scope": st.session_state.get("subscription_scope", "off"),
+        "subscription_scope": (
+            st.session_state.get("subscription_scope", "off") if _is_owner() else "off"
+        ),
     }
     if st.session_state.get("agent_sdk_model"):
         cfg["agent_sdk_model"] = st.session_state["agent_sdk_model"]
@@ -138,29 +223,14 @@ def _save_llm_config() -> None:
             cfg[key] = val
     # 持久化失败（目录只读 / 磁盘满）只记 warning，不得打断「开始分析」主流程
     try:
-        _LLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _LLM_CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2))
+        target = _llm_config_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(cfg, ensure_ascii=False, indent=2))
     except OSError as exc:
         logger.warning("LLM 配置持久化失败（不影响本次分析）: %s", exc)
 
 
-# Provider display names in recommended order
-_PROVIDERS: list[tuple[str, str]] = [
-    ("MiniMax（推荐·国内直连）", "minimax"),
-    ("DeepSeek", "deepseek"),
-    ("通义千问 Qwen", "qwen"),
-    ("智谱 GLM", "glm"),
-    ("OpenAI", "openai"),
-    ("Anthropic", "anthropic"),
-    ("Google Gemini", "google"),
-    ("xAI Grok", "xai"),
-    ("OpenRouter（聚合·填 vendor/model 形式 ID）", "openrouter"),
-    ("OpenAI 兼容（自定义 base_url·9Router/AI Router/自建代理）", "openai_compatible"),
-    ("Ollama（本地）", "ollama"),
-]
-
-_PROVIDER_DISPLAY = [name for name, _ in _PROVIDERS]
-_PROVIDER_KEYS = [key for _, key in _PROVIDERS]
+# Provider display names / keys 来自 web.llm_providers（账户页共用同一份清单）。
 
 
 def _resolve_user_input(raw: str) -> tuple[str, str | None]:
@@ -180,7 +250,7 @@ def _resolve_user_input(raw: str) -> tuple[str, str | None]:
 
 def _clear_analysis_artifacts(ticker: str, trade_date: str) -> None:
     clear_incomplete_task(ticker, trade_date)
-    clear_checkpoint(DEFAULT_CONFIG["data_cache_dir"], ticker, trade_date)
+    clear_checkpoint(_analysis_cache_dir(), ticker, trade_date)
 
 
 def _render_analysis_controls(raw_ticker: str, trade_date_value: date) -> None:
@@ -259,6 +329,70 @@ def _render_analysis_controls(raw_ticker: str, trade_date_value: date) -> None:
         st.caption("正在停止并清空，收尾完成后可重新开始。")
 
 
+def _render_api_key_control(provider_key: str) -> None:
+    """按账户保存当前供应商的 API Key（不回显、不写入 llm_config.json）。"""
+    if not provider_needs_key(provider_key):
+        if provider_key == "ollama":
+            st.caption("Ollama 走本地服务，不需要 API Key。")
+        return
+    paths = current_paths()
+    if paths is None:
+        return
+
+    owner = _is_owner()
+    keys = load_secrets(paths.secrets)
+    # session_state 只放「有没有 Key」，不复制 Key 明文；真正的 Key 在渲染配置时
+    # 才从 secrets.json 读到局部变量里。
+    st.session_state["llm_api_keys"] = {name: True for name, value in keys.items() if value}
+    st.session_state["allow_env_api_keys"] = owner
+    current_key = keys.get(provider_key)
+    env_name = env_var_for(provider_key)
+
+    if current_key:
+        st.success(f"本账户已配置 Key：`{mask_key(current_key)}`", icon="🔑")
+    elif owner and any(os.getenv(name) for name in env_var_candidates(provider_key)):
+        st.caption(f"本账户未保存 Key，将使用服务器 `.env` 的 `{env_name}`（仅 owner）。")
+    else:
+        st.warning(f"未配置 {provider_label(provider_key)} 的 API Key；开始分析会被拦住。")
+
+    input_key = f"api_key_input_{provider_key}"
+    value = st.text_input(
+        f"{provider_label(provider_key)} API Key",
+        type="password",
+        key=input_key,
+        placeholder="粘贴后点保存；页面不会回显",
+        help=(
+            "Key 保存在你账户目录的 secrets.json（0600），不会跟随团队配置导出，"
+            "其他用户读不到。"
+        ),
+    )
+    save_col, clear_col = st.columns(2)
+    if save_col.button("保存 Key", key=f"api_key_save_{provider_key}", use_container_width=True):
+        try:
+            updated = set_api_key(paths.secrets, provider_key, value)
+        except (ValueError, OSError) as exc:
+            st.error(str(exc))
+        else:
+            st.session_state["llm_api_keys"] = {
+                name: True for name, value in updated.items() if value
+            }
+            st.success("已保存。")
+            st.rerun()
+    if current_key and clear_col.button(
+        "清除 Key", key=f"api_key_clear_{provider_key}", use_container_width=True
+    ):
+        try:
+            updated = delete_api_key(paths.secrets, provider_key)
+        except OSError as exc:
+            st.error(f"清除失败：{exc}")
+        else:
+            st.session_state["llm_api_keys"] = {
+                name: True for name, value in updated.items() if value
+            }
+            st.success("已清除。")
+            st.rerun()
+
+
 def _render_llm_config() -> None:
     """Render LLM provider and model selection controls."""
 
@@ -271,6 +405,7 @@ def _render_llm_config() -> None:
     )
     provider_key = _PROVIDER_KEYS[provider_idx]
     st.session_state["llm_provider"] = provider_key
+    st.session_state["allow_env_api_keys"] = _is_owner()
 
     if provider_key in MODEL_OPTIONS:
         quick_options = MODEL_OPTIONS[provider_key]["quick"]
@@ -315,21 +450,27 @@ def _render_llm_config() -> None:
         placeholder="例: https://your-relay.example/v1",
         help=(
             "通过第三方中转/代理访问模型时填写网关地址；留空则用所选供应商的官方地址。"
-            "API Key 仍从 .env 读取，每个供应商用各自的环境变量——"
-            "OpenAI=OPENAI_API_KEY、DeepSeek=DEEPSEEK_API_KEY、"
-            "通义=DASHSCOPE_API_KEY、智谱=ZHIPU_API_KEY、MiniMax=MINIMAX_API_KEY、"
-            "Claude=ANTHROPIC_API_KEY、OpenRouter=OPENROUTER_API_KEY、xAI=XAI_API_KEY、"
-            "OpenAI 兼容（自定义）=OPENAI_COMPATIBLE_API_KEY（也接受 OPENAI_API_KEY）。"
-            "也可在 .env 里设 BACKEND_URL 代替此处。"
+            "API Key 在下方按账户保存（每个供应商一把）；"
+            "owner 也可以继续用服务器 .env 里的各家环境变量兜底。"
         ),
     )
     if base_url_required:
         st.caption(
             "已选「OpenAI 兼容（自定义）」：**Base URL 必填**（你的网关，走标准 Chat "
-            "Completions），模型 ID 手动填写，Key 在 .env 设 `OPENAI_COMPATIBLE_API_KEY`。"
+            "Completions），模型 ID 手动填写，Key 在下方保存。"
         )
 
-    # ── 个人 Claude 订阅额度（可选，仅个人自用）────────────────────────
+    _render_api_key_control(provider_key)
+
+    # ── 个人 Claude 订阅额度（仅 owner；使用服务器本机登录凭据）────────────
+    if not _is_owner():
+        # 订阅额度是**服务器级**凭据（本机 claude 登录 / CLAUDE_CODE_OAUTH_TOKEN），
+        # 让普通成员打开等于让所有人共用 owner 的额度，且无法按人计费/限流。
+        st.session_state["subscription_scope"] = "off"
+        st.session_state["subscription_scope_idx"] = 0
+        st.caption("Claude 订阅覆盖仅 owner 可用（使用服务器本机登录凭据），普通成员走自己的 API Key。")
+        return
+
     _scope_labels = [
         "关闭（走上面选的供应商）",
         "仅深度节点（Research/Portfolio）",
@@ -383,6 +524,24 @@ def render_sidebar() -> None:
     # 否则 StreamlitAPIException；而「开始分析 / 历史记录」又必须能把视图切回
     # 工作台。按钮只写一个普通 session 变量，没有这个限制。
     st.session_state.setdefault("current_view", "workspace")
+
+    user = _current_user()
+    if user:
+        role_label = "owner" if user.get("role") == "owner" else "member"
+        # display_name 是用户可控的；这里用了 unsafe_allow_html，必须转义。
+        shown_name = html.escape(
+            str(user.get("display_name") or user.get("username") or "")
+        )
+        st.markdown(
+            f"<div style='color:#888;font-size:0.78rem;margin-bottom:0.4rem;'>"
+            f"👤 <b style='color:#f5f1eb;'>{shown_name}</b>"
+            f" · {role_label}</div>",
+            unsafe_allow_html=True,
+        )
+    notice = st.session_state.pop("auth_notice", None)
+    if notice:
+        st.info(notice, icon="✅")
+
     nav_workspace, nav_team = st.columns(2)
     if nav_workspace.button(
         "📈 工作台",
@@ -401,6 +560,21 @@ def render_sidebar() -> None:
         type="primary" if st.session_state["current_view"] == "team" else "secondary",
     ):
         st.session_state["current_view"] = "team"
+        st.rerun()
+
+    nav_account, nav_logout = st.columns(2)
+    if nav_account.button(
+        "👤 账户",
+        key="nav_account",
+        use_container_width=True,
+        type="primary" if st.session_state["current_view"] == "account" else "secondary",
+    ):
+        st.session_state["current_view"] = "account"
+        st.rerun()
+    if nav_logout.button("退出登录", key="nav_logout", use_container_width=True):
+        # 不在按钮回调里直接删 session_state（会撞上已实例化 widget 的限制）；
+        # 交给下一次 run 最开头的认证门清理。
+        st.session_state["_logout_requested"] = True
         st.rerun()
 
     st.markdown(

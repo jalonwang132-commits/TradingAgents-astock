@@ -261,6 +261,10 @@ class OpenAIClient(BaseLLMClient):
         """Return configured ChatOpenAI instance."""
         self.warn_if_unknown_model()
         llm_kwargs = {"model": self.model}
+        explicit_key = str(self.kwargs.get("api_key") or "").strip()
+        # 多用户模式下普通成员的 allow_env_api_key=False：绝不回落到服务器 .env
+        # 里 owner 的 Key。默认 True 保持 CLI / 单用户行为不变。
+        allow_env = bool(self.kwargs.get("allow_env_api_key", True))
 
         # Generic OpenAI-compatible relay (#77 / #81): the user supplies the
         # base_url and model themselves, and the API key comes from a generic
@@ -278,18 +282,21 @@ class OpenAIClient(BaseLLMClient):
             # Per-role api_key (from role_llms spec) wins over env vars, so
             # several OpenAI-compatible gateways with different keys can run
             # side by side (e.g. opencode-go + a local proxy relay).
-            api_key = (
-                self.kwargs.get("api_key")
-                or os.environ.get("OPENAI_COMPATIBLE_API_KEY")
-                or os.environ.get("OPENAI_API_KEY")
-            )
+            api_key = explicit_key
+            if not api_key and allow_env:
+                api_key = (
+                    os.environ.get("OPENAI_COMPATIBLE_API_KEY")
+                    or os.environ.get("OPENAI_API_KEY")
+                    or ""
+                )
             if api_key:
                 llm_kwargs["api_key"] = api_key
-            elif "api_key" not in self.kwargs:
+            else:
                 raise RuntimeError(
-                    "未找到 openai_compatible 的 API Key。请在 .env 文件或环境变量中设置 "
-                    "`OPENAI_COMPATIBLE_API_KEY=你的key`（也接受 `OPENAI_API_KEY`），"
-                    "设置后重启程序。"
+                    "未找到 openai_compatible 的 API Key。请在「👤 账户 → API Key」"
+                    "保存你自己的网关 Key"
+                    + ("，或在 .env 设置 `OPENAI_COMPATIBLE_API_KEY`" if allow_env else "")
+                    + "。"
                 )
         # Provider-specific base URL and auth. An explicit base_url on the
         # client (e.g. a corporate proxy) takes precedence over the
@@ -298,22 +305,44 @@ class OpenAIClient(BaseLLMClient):
             default_base, api_key_env = _PROVIDER_CONFIG[self.provider]
             llm_kwargs["base_url"] = self.base_url or default_base
             if api_key_env:
-                api_key = os.environ.get(api_key_env)
+                api_key = explicit_key
+                if not api_key and allow_env:
+                    api_key = os.environ.get(api_key_env) or ""
                 if api_key:
                     llm_kwargs["api_key"] = api_key
-                elif "api_key" not in self.kwargs:
+                else:
                     # Without this, ChatOpenAI fails downstream with a confusing
                     # "OPENAI_API_KEY must be set" — but deepseek/qwen/glm/minimax
                     # each need their OWN env var. Name the exact one (#42).
                     raise RuntimeError(
-                        f"未找到 {self.provider} 的 API Key。请在 .env 文件或环境变量中设置 "
-                        f"`{api_key_env}`（例如 `{api_key_env}=你的key`），设置后重启程序。"
-                        f"注意：{self.provider} 用的是 {api_key_env}，不是 OPENAI_API_KEY。"
+                        f"未找到 {self.provider} 的 API Key。请在「👤 账户 → API Key」"
+                        f"保存你自己的 `{api_key_env}`"
+                        + (
+                            f"，或在 .env 文件 / 环境变量中设置 `{api_key_env}`"
+                            if allow_env
+                            else ""
+                        )
+                        + f"。注意：{self.provider} 用的是 {api_key_env}，"
+                        "不是 OPENAI_API_KEY。"
                     )
             else:
                 llm_kwargs["api_key"] = "ollama"
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
+
+        # 原生 OpenAI（不在 _PROVIDER_CONFIG 里）也必须守住 .env 回落：
+        # ChatOpenAI 自己会读 OPENAI_API_KEY，不在这里拦就等于普通成员悄悄用
+        # owner 的 OpenAI Key。
+        if self.provider == "openai" and not allow_env:
+            # 成员模式必须显式钉死端点：ChatOpenAI 会在没传 base_url 时回落
+            # OPENAI_API_BASE / OPENAI_BASE_URL 环境变量，把成员的 Key 发到
+            # owner 的中转上（端点泄露，虽不是 Key 泄露）。
+            llm_kwargs.setdefault("base_url", "https://api.openai.com/v1")
+            if not explicit_key:
+                raise RuntimeError(
+                    "未找到 OpenAI 的 API Key。请在「👤 账户 → API Key」保存你自己的 "
+                    "`OPENAI_API_KEY`（服务器不会借用 owner 的 Key）。"
+                )
 
         # Forward user-provided kwargs
         for key in _PASSTHROUGH_KWARGS:
